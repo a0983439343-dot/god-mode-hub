@@ -4,17 +4,40 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+local BaseURL = "https://a0983439343-dot.github.io/god-mode-hub/DeveloperTool_V4/"
+
 local existing = PlayerGui:FindFirstChild("DeveloperTool_V4")
 if existing then
     existing:Destroy()
 end
 
-local Cleanup = require(script.src.Core.Cleanup)
-local Movement = require(script.src.Modules.Movement)
-local Visuals = require(script.src.Modules.Visuals)
-local ESP = require(script.src.Modules.ESP)
-local Teleport = require(script.src.Modules.Teleport)
-local Performance = require(script.src.Modules.Performance)
+local function loadModule(path)
+    local ok, result = pcall(function()
+        local source = game:HttpGet(BaseURL .. path)
+        local chunk = loadstring(source)
+        if not chunk then
+            error("Module compile failed: " .. path)
+        end
+        return chunk()
+    end)
+    if not ok then
+        warn(result)
+        return nil
+    end
+    return result
+end
+
+local Cleanup = loadModule("src/Core/Cleanup.lua")
+local Movement = loadModule("src/Modules/Movement.lua")
+local Visuals = loadModule("src/Modules/Visuals.lua")
+local ESP = loadModule("src/Modules/ESP.lua")
+local Teleport = loadModule("src/Modules/Teleport.lua")
+local Performance = loadModule("src/Modules/Performance.lua")
+
+if not Cleanup or not Movement or not Visuals or not ESP or not Teleport or not Performance then
+    warn("DeveloperTool_V4 module load failed")
+    return
+end
 
 local State = Cleanup.new("DeveloperTool_V4")
 
@@ -115,5 +138,3 @@ end)
 _G.DeveloperTool_V4_Cleanup = function()
     State:Cleanup()
 end
-
-Tab = nil
