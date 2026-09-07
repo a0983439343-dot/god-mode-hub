@@ -4,7 +4,7 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
-local BaseURL = "https://a0983439343-dot.github.io/god-mode-hub/DeveloperTool_V4/"
+local BaseURL = "https://raw.githubusercontent.com/a0983439343-dot/god-mode-hub/refs/heads/main/god-mode-hub-main/DeveloperTool_V4/"
 
 local existing = PlayerGui:FindFirstChild("DeveloperTool_V4")
 if existing then
