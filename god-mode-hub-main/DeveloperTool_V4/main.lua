@@ -64,7 +64,16 @@ local Window = Rayfield:CreateWindow({
     Discord = {
         Enabled = false
     },
-    KeySystem = false
+    KeySystem = true,
+    KeySettings = {
+        Title = "測試面板驗證",
+        Subtitle = "請輸入金鑰",
+        Note = "沒密碼別想用啦",
+        FileName = "DevPanelKey",
+        SaveKey = true,
+        GrabKeyFromSite = false,
+        Key = {"123456789", "SuperSecretKey"}
+    }
 })
 
 local function bindModule(moduleObject, tab)
