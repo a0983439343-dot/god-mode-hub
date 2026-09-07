@@ -1,382 +1,845 @@
 local Movement = {
     Connections = {},
     CharacterConnections = {},
+
     Noclip = false,
     InfiniteJump = false,
+
     FlightMode = "CFrame",
     Flying = false,
+
     Speed = 16,
     JumpPower = 50,
     Gravity = 196.2,
     FlightSpeed = 70,
-    BodyVelocity = nil
+
+    BodyVelocity = nil,
+    LinearVelocity = nil,
+    FlightAttachment = nil,
+
+    OriginalCanCollide = {},
+    OriginalGravity = nil,
+
+    Player = nil,
+    PlayerGui = nil,
+    State = nil,
+    RunService = nil,
+    Rayfield = nil,
+    Window = nil,
+    Tab = nil,
+
+    _character = nil,
+    _humanoid = nil,
+    _root = nil,
+
+    _keys = {},
+    _destroyed = false,
 }
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
-local Player = Players.LocalPlayer
-local Keys = {}
-local Character
+----------------------------------------------------------------
+-- 工具
+----------------------------------------------------------------
 
-local function addConnection(self, connection)
-    table.insert(self.Connections, connection)
-    return connection
+local function disconnect(connection)
+    if connection then
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+end
+
+local function safeDestroy(instance)
+    if instance then
+        pcall(function()
+            instance:Destroy()
+        end)
+    end
 end
 
 local function getCharacter()
-    Character = Player.Character or Player.CharacterAdded:Wait()
-    return Character
-end
+    local player = Movement.Player or Players.LocalPlayer
+    if not player then
+        return nil
+    end
 
-local function getRoot()
-    local character = getCharacter()
-    return character:FindFirstChild("HumanoidRootPart")
+    local character = player.Character
+    if character and character.Parent then
+        return character
+    end
+
+    return nil
 end
 
 local function getHumanoid()
     local character = getCharacter()
-    return character:FindFirstChildOfClass("Humanoid")
-end
-
-local function clearFlightForce()
-    if Movement.BodyVelocity then
-        pcall(function()
-            Movement.BodyVelocity:Destroy()
-        end)
-        Movement.BodyVelocity = nil
+    if not character then
+        return nil
     end
-end
 
-local function stopFlight()
-    Movement.Flying = false
-    clearFlightForce()
-    local humanoid = getHumanoid()
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then
-        humanoid.AutoRotate = true
+        return humanoid
     end
+
+    return nil
 end
 
-local function startCFrameFlight()
-    Movement.Flying = true
-    clearFlightForce()
+local function getRoot()
+    local character = getCharacter()
+    if not character then
+        return nil
+    end
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("Torso")
+
+    return root
+end
+
+local function parseNumber(value, fallback)
+    local number = tonumber(value)
+
+    if number == nil then
+        return fallback
+    end
+
+    return number
+end
+
+local function clampNumber(value, minimum, maximum)
+    return math.clamp(value, minimum, maximum)
+end
+
+----------------------------------------------------------------
+-- 角色設定
+----------------------------------------------------------------
+
+function Movement:ApplyCharacterSettings()
     local humanoid = getHumanoid()
-    if humanoid then
-        humanoid.AutoRotate = false
+    if not humanoid then
+        return
+    end
+
+    pcall(function()
+        humanoid.WalkSpeed = self.Speed
+    end)
+
+    pcall(function()
+        if humanoid.UseJumpPower then
+            humanoid.JumpPower = self.JumpPower
+        else
+            humanoid.JumpHeight = math.clamp(self.JumpPower / 7, 1, 30)
+        end
+    end)
+
+    if self.OriginalGravity == nil then
+        self.OriginalGravity = Workspace.Gravity
+    end
+
+    pcall(function()
+        Workspace.Gravity = self.Gravity
+    end)
+end
+
+----------------------------------------------------------------
+-- Noclip
+----------------------------------------------------------------
+
+function Movement:SetNoclip(enabled)
+    enabled = enabled == true
+
+    self.Noclip = enabled
+
+    local character = getCharacter()
+    if not character then
+        return
+    end
+
+    if enabled then
+        for _, object in ipairs(character:GetDescendants()) do
+            if object:IsA("BasePart") then
+                if self.OriginalCanCollide[object] == nil then
+                    self.OriginalCanCollide[object] = object.CanCollide
+                end
+
+                pcall(function()
+                    object.CanCollide = false
+                end)
+            end
+        end
+    else
+        for object, originalValue in pairs(self.OriginalCanCollide) do
+            if object and object.Parent then
+                pcall(function()
+                    object.CanCollide = originalValue
+                end)
+            end
+
+            self.OriginalCanCollide[object] = nil
+        end
     end
 end
 
-local function startLinearVelocityFlight()
+function Movement:UpdateNoclip()
+    if not self.Noclip then
+        return
+    end
+
+    local character = getCharacter()
+    if not character then
+        return
+    end
+
+    for _, object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            if self.OriginalCanCollide[object] == nil then
+                self.OriginalCanCollide[object] = object.CanCollide
+            end
+
+            if object.CanCollide then
+                pcall(function()
+                    object.CanCollide = false
+                end)
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------
+-- Infinite Jump
+----------------------------------------------------------------
+
+function Movement:SetInfiniteJump(enabled)
+    self.InfiniteJump = enabled == true
+end
+
+----------------------------------------------------------------
+-- 飛行
+----------------------------------------------------------------
+
+function Movement:ClearFlightForce()
+    safeDestroy(self.LinearVelocity)
+    safeDestroy(self.BodyVelocity)
+    safeDestroy(self.FlightAttachment)
+
+    self.LinearVelocity = nil
+    self.BodyVelocity = nil
+    self.FlightAttachment = nil
+end
+
+function Movement:CreateLinearVelocity(root)
+    self:ClearFlightForce()
+
+    local attachment = Instance.new("Attachment")
+    attachment.Name = "DeveloperFlightAttachment"
+    attachment.Parent = root
+
+    local linearVelocity = Instance.new("LinearVelocity")
+    linearVelocity.Name = "DeveloperFlightLinearVelocity"
+    linearVelocity.Attachment0 = attachment
+    linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+    linearVelocity.MaxForce = math.huge
+    linearVelocity.VectorVelocity = Vector3.zero
+    linearVelocity.Parent = root
+
+    self.FlightAttachment = attachment
+    self.LinearVelocity = linearVelocity
+
+    return linearVelocity
+end
+
+function Movement:CreateBodyVelocity(root)
+    self:ClearFlightForce()
+
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Name = "DeveloperFlightBodyVelocity"
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.P = 10000
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.Parent = root
+
+    self.BodyVelocity = bodyVelocity
+
+    return bodyVelocity
+end
+
+function Movement:GetFlightDirection(camera)
+    if not camera then
+        return Vector3.zero
+    end
+
+    local direction = Vector3.zero
+
+    ------------------------------------------------------------
+    -- 相機自己的 Forward / Right
+    -- 不再把 Y 軸砍掉，因此可以真正上下飛
+    ------------------------------------------------------------
+
+    if self._keys.W then
+        direction += camera.CFrame.LookVector
+    end
+
+    if self._keys.S then
+        direction -= camera.CFrame.LookVector
+    end
+
+    if self._keys.D then
+        direction += camera.CFrame.RightVector
+    end
+
+    if self._keys.A then
+        direction -= camera.CFrame.RightVector
+    end
+
+    ------------------------------------------------------------
+    -- 垂直移動
+    ------------------------------------------------------------
+
+    if self._keys.Space then
+        direction += Vector3.yAxis
+    end
+
+    if self._keys.LeftControl or self._keys.RightControl then
+        direction -= Vector3.yAxis
+    end
+
+    if direction.Magnitude > 0 then
+        direction = direction.Unit
+    end
+
+    return direction
+end
+
+function Movement:StartFlight()
+    if self.Flying then
+        return
+    end
+
     local root = getRoot()
     if not root then
         return
     end
-    clearFlightForce()
-    local attachment = root:FindFirstChild("DeveloperFlightAttachment") or Instance.new("Attachment")
-    attachment.Name = "DeveloperFlightAttachment"
-    attachment.Parent = root
-    local linear = Instance.new("LinearVelocity")
-    linear.Name = "DeveloperFlightLinearVelocity"
-    linear.Attachment0 = attachment
-    linear.RelativeTo = Enum.ActuatorRelativeTo.World
-    linear.MaxForce = math.huge
-    linear.VectorVelocity = Vector3.zero
-    linear.Parent = root
-    Movement.BodyVelocity = linear
-    Movement.Flying = true
+
+    self.Flying = true
+
+    pcall(function()
+        if self.FlightMode == "LinearVelocity" then
+            self:CreateLinearVelocity(root)
+        else
+            self:ClearFlightForce()
+        end
+    end)
+
     local humanoid = getHumanoid()
     if humanoid then
-        humanoid.AutoRotate = false
+        pcall(function()
+            humanoid.AutoRotate = false
+        end)
     end
 end
 
-local function setFlight(enabled)
+function Movement:StopFlight()
+    if not self.Flying and not self.LinearVelocity and not self.BodyVelocity then
+        return
+    end
+
+    self.Flying = false
+    self:ClearFlightForce()
+
+    local humanoid = getHumanoid()
+
+    if humanoid then
+        pcall(function()
+            humanoid.AutoRotate = true
+        end)
+    end
+end
+
+function Movement:SetFlight(enabled)
+    enabled = enabled == true
+
     if enabled then
-        if Movement.FlightMode == "CFrame" then
-            startCFrameFlight()
-        else
-            startLinearVelocityFlight()
-        end
+        self:StartFlight()
     else
-        stopFlight()
+        self:StopFlight()
     end
 end
 
-local function movementVector(camera)
-    local forward = 0
-    local side = 0
-    local vertical = 0
-
-    if Keys.W then
-        forward += 1
-    end
-    if Keys.S then
-        forward -= 1
-    end
-    if Keys.D then
-        side += 1
-    end
-    if Keys.A then
-        side -= 1
-    end
-    if Keys.Space then
-        vertical += 1
-    end
-    if Keys.LeftControl then
-        vertical -= 1
-    end
-
-    local flatForward = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
-    local flatRight = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
-    if flatForward.Magnitude > 0 then
-        flatForward = flatForward.Unit
-    end
-    if flatRight.Magnitude > 0 then
-        flatRight = flatRight.Unit
-    end
-
-    local vector = flatForward * forward + flatRight * side + Vector3.yAxis * vertical
-    if vector.Magnitude > 1 then
-        vector = vector.Unit
-    end
-    return vector
-end
-
-local function updateFlight(dt)
-    if not Movement.Flying then
+function Movement:UpdateFlight()
+    if not self.Flying then
         return
     end
 
     local root = getRoot()
-    local humanoid = getHumanoid()
-    local camera = Workspace.CurrentCamera
-
-    if not root or not humanoid or not camera then
+    if not root then
         return
     end
 
-    local vector = movementVector(camera) * Movement.FlightSpeed
-
-    if Movement.FlightMode == "CFrame" then
-        local facing = camera.CFrame.LookVector
-        local target = root.Position + vector * dt
-        local look = Vector3.new(facing.X, 0, facing.Z)
-        if look.Magnitude < 0.01 then
-            look = Vector3.new(0, 0, -1)
-        else
-            look = look.Unit
-        end
-        root.CFrame = CFrame.lookAt(target, target + look)
-        root.AssemblyLinearVelocity = Vector3.zero
-    elseif Movement.BodyVelocity then
-        Movement.BodyVelocity.VectorVelocity = vector
-        local look = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
-        if look.Magnitude > 0.01 then
-            root.CFrame = CFrame.lookAt(root.Position, root.Position + look.Unit)
-        end
-    end
-end
-
-local function applyCharacterSettings()
     local humanoid = getHumanoid()
-    if humanoid then
-        humanoid.WalkSpeed = Movement.Speed
-        humanoid.UseJumpPower = true
-        humanoid.JumpPower = Movement.JumpPower
+    local camera = Workspace.CurrentCamera
+
+    if not camera then
+        return
     end
-    Workspace.Gravity = Movement.Gravity
+
+    local direction = self:GetFlightDirection(camera)
+    local velocity = direction * self.FlightSpeed
+
+    ------------------------------------------------------------
+    -- LinearVelocity 模式
+    ------------------------------------------------------------
+
+    if self.FlightMode == "LinearVelocity" then
+        if not self.LinearVelocity
+            or not self.LinearVelocity.Parent
+            or self.LinearVelocity.Parent ~= root then
+
+            self:CreateLinearVelocity(root)
+        end
+
+        pcall(function()
+            self.LinearVelocity.VectorVelocity = velocity
+        end)
+
+    ------------------------------------------------------------
+    -- CFrame 模式
+    ------------------------------------------------------------
+
+    else
+        if direction.Magnitude > 0 then
+            local newPosition = root.Position + velocity * (1 / 60)
+
+            pcall(function()
+                root.CFrame = CFrame.new(
+                    newPosition,
+                    newPosition + camera.CFrame.LookVector
+                )
+            end)
+        end
+
+        pcall(function()
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end)
+    end
+
+    if humanoid then
+        pcall(function()
+            humanoid.AutoRotate = false
+        end)
+    end
 end
 
-function Movement:Init(context)
-    Player = context.Player
+----------------------------------------------------------------
+-- UI
+----------------------------------------------------------------
 
-    local playerGui = context.PlayerGui
-    local tab = context.Tab
+function Movement:CreateUI()
+    local tab = self.Tab
+    if not tab then
+        return
+    end
 
-    addConnection(self, UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then
-            return
-        end
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            Keys[input.KeyCode.Name] = true
-        end
-    end))
+    ------------------------------------------------------------
+    -- 飛行
+    ------------------------------------------------------------
 
-    addConnection(self, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            Keys[input.KeyCode.Name] = false
-        end
-    end))
+    tab:CreateToggle({
+        Name = "啟用飛行",
+        CurrentValue = false,
+        Flag = "Developer_Flight",
+        Callback = function(value)
+            self:SetFlight(value)
+        end,
+    })
 
-    addConnection(self, RunService.RenderStepped:Connect(updateFlight))
-
-    addConnection(self, Player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        applyCharacterSettings()
-        if self.Flying then
-            setFlight(true)
-        end
-    end))
-
-    getCharacter()
-    applyCharacterSettings()
-
-    tab:CreateSection("飛行")
     tab:CreateDropdown({
         Name = "飛行模式",
-        Options = {"座標模式", "線性速度"},
-        CurrentOption = {"座標模式"},
+        Options = {
+            "CFrame",
+            "LinearVelocity",
+        },
+        CurrentOption = {
+            self.FlightMode
+        },
         MultipleOptions = false,
-        Flag = "DeveloperFlightMode",
+        Flag = "Developer_FlightMode",
         Callback = function(option)
-            self.FlightMode = option[1] == "線性速度" and "LinearVelocity" or "CFrame"
-            if self.Flying then
-                setFlight(false)
-                setFlight(true)
+            local selected
+
+            if type(option) == "table" then
+                selected = option[1]
+            else
+                selected = option
             end
-        end
+
+            if selected == "CFrame" or selected == "LinearVelocity" then
+                self.FlightMode = selected
+
+                if self.Flying then
+                    self:StopFlight()
+                    task.wait()
+                    self:StartFlight()
+                end
+            end
+        end,
     })
 
     tab:CreateInput({
         Name = "飛行速度",
         CurrentValue = tostring(self.FlightSpeed),
-        PlaceholderText = "輸入飛行速度（10～300）",
+        PlaceholderText = "輸入 1~1000",
         RemoveTextAfterFocusLost = false,
-        Flag = "DeveloperFlightSpeed",
+        Flag = "Developer_FlightSpeed",
         Callback = function(value)
-            local number = tonumber(value)
-            if number then
-                self.FlightSpeed = math.clamp(number, 10, 300)
-            end
-        end
+            self.FlightSpeed = clampNumber(
+                parseNumber(value, self.FlightSpeed),
+                1,
+                1000
+            )
+        end,
     })
 
-    tab:CreateToggle({
-        Name = "飛行",
-        CurrentValue = false,
-        Flag = "DeveloperFly",
-        Callback = function(value)
-            setFlight(value)
-        end
-    })
-
-    tab:CreateSection("角色")
-    tab:CreateToggle({
-        Name = "穿牆",
-        CurrentValue = false,
-        Flag = "DeveloperNoclip",
-        Callback = function(value)
-            self.Noclip = value
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "無限跳躍",
-        CurrentValue = false,
-        Flag = "DeveloperInfiniteJump",
-        Callback = function(value)
-            self.InfiniteJump = value
-        end
-    })
+    ------------------------------------------------------------
+    -- 角色速度
+    ------------------------------------------------------------
 
     tab:CreateInput({
-        Name = "移動速度",
+        Name = "玩家速度",
         CurrentValue = tostring(self.Speed),
-        PlaceholderText = "輸入移動速度（0～250）",
+        PlaceholderText = "輸入 1~1000",
         RemoveTextAfterFocusLost = false,
-        Flag = "DeveloperWalkSpeed",
+        Flag = "Developer_WalkSpeed",
         Callback = function(value)
-            local number = tonumber(value)
-            if number then
-                self.Speed = math.clamp(number, 0, 250)
-                applyCharacterSettings()
-            end
-        end
+            self.Speed = clampNumber(
+                parseNumber(value, self.Speed),
+                1,
+                1000
+            )
+
+            self:ApplyCharacterSettings()
+        end,
     })
 
     tab:CreateInput({
         Name = "跳躍力",
         CurrentValue = tostring(self.JumpPower),
-        PlaceholderText = "輸入跳躍力（0～250）",
+        PlaceholderText = "輸入 1~500",
         RemoveTextAfterFocusLost = false,
-        Flag = "DeveloperJumpPower",
+        Flag = "Developer_JumpPower",
         Callback = function(value)
-            local number = tonumber(value)
-            if number then
-                self.JumpPower = math.clamp(number, 0, 250)
-                applyCharacterSettings()
-            end
-        end
+            self.JumpPower = clampNumber(
+                parseNumber(value, self.JumpPower),
+                1,
+                500
+            )
+
+            self:ApplyCharacterSettings()
+        end,
     })
 
     tab:CreateInput({
         Name = "重力",
         CurrentValue = tostring(self.Gravity),
-        PlaceholderText = "輸入重力（0～400）",
+        PlaceholderText = "輸入 0~1000",
         RemoveTextAfterFocusLost = false,
-        Flag = "DeveloperGravity",
+        Flag = "Developer_Gravity",
         Callback = function(value)
-            local number = tonumber(value)
-            if number then
-                self.Gravity = math.clamp(number, 0, 400)
-                Workspace.Gravity = self.Gravity
-            end
-        end
+            self.Gravity = clampNumber(
+                parseNumber(value, self.Gravity),
+                0,
+                1000
+            )
+
+            self:ApplyCharacterSettings()
+        end,
     })
 
+    ------------------------------------------------------------
+    -- Noclip
+    ------------------------------------------------------------
+
+    tab:CreateToggle({
+        Name = "穿牆",
+        CurrentValue = false,
+        Flag = "Developer_Noclip",
+        Callback = function(value)
+            self:SetNoclip(value)
+        end,
+    })
+
+    ------------------------------------------------------------
+    -- 無限跳
+    ------------------------------------------------------------
+
+    tab:CreateToggle({
+        Name = "無限跳",
+        CurrentValue = false,
+        Flag = "Developer_InfiniteJump",
+        Callback = function(value)
+            self:SetInfiniteJump(value)
+        end,
+    })
+
+    ------------------------------------------------------------
+    -- 重置
+    ------------------------------------------------------------
+
     tab:CreateButton({
-        Name = "重設移動設定",
+        Name = "重置移動設定",
         Callback = function()
             self.Speed = 16
             self.JumpPower = 50
-            self.Gravity = 196.2
-            applyCharacterSettings()
-        end
+            self.Gravity = self.OriginalGravity or 196.2
+            self.FlightSpeed = 70
+
+            self:ApplyCharacterSettings()
+        end,
     })
-
-    addConnection(self, UserInputService.JumpRequest:Connect(function()
-        if self.InfiniteJump then
-            local humanoid = getHumanoid()
-            if humanoid then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-        end
-    end))
-
-    addConnection(self, RunService.Stepped:Connect(function()
-        if not self.Noclip then
-            return
-        end
-        local character = Player.Character
-        if not character then
-            return
-        end
-        for i, item in ipairs(character:GetDescendants()) do
-            if i % 100 == 0 then
-                task.wait()
-            end
-            if item:IsA("BasePart") then
-                item.CanCollide = false
-            end
-        end
-    end))
-
 end
 
+----------------------------------------------------------------
+-- Init
+----------------------------------------------------------------
+
+function Movement:Init(context)
+    if self._destroyed then
+        return
+    end
+
+    self.Player = context.Player or Players.LocalPlayer
+    self.PlayerGui = context.PlayerGui
+    self.State = context.State
+    self.RunService = context.RunService or RunService
+    self.Rayfield = context.Rayfield
+    self.Window = context.Window
+    self.Tab = context.Tab
+
+    if self.OriginalGravity == nil then
+        self.OriginalGravity = Workspace.Gravity
+        self.Gravity = Workspace.Gravity
+    end
+
+    ------------------------------------------------------------
+    -- 鍵盤輸入
+    ------------------------------------------------------------
+
+    table.insert(self.Connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then
+            return
+        end
+
+        local key = input.KeyCode
+
+        if key == Enum.KeyCode.W then
+            self._keys.W = true
+
+        elseif key == Enum.KeyCode.S then
+            self._keys.S = true
+
+        elseif key == Enum.KeyCode.A then
+            self._keys.A = true
+
+        elseif key == Enum.KeyCode.D then
+            self._keys.D = true
+
+        elseif key == Enum.KeyCode.Space then
+            self._keys.Space = true
+
+        elseif key == Enum.KeyCode.LeftControl then
+            self._keys.LeftControl = true
+
+        elseif key == Enum.KeyCode.RightControl then
+            self._keys.RightControl = true
+        end
+    end))
+
+    table.insert(self.Connections, UserInputService.InputEnded:Connect(function(input)
+        local key = input.KeyCode
+
+        if key == Enum.KeyCode.W then
+            self._keys.W = false
+
+        elseif key == Enum.KeyCode.S then
+            self._keys.S = false
+
+        elseif key == Enum.KeyCode.A then
+            self._keys.A = false
+
+        elseif key == Enum.KeyCode.D then
+            self._keys.D = false
+
+        elseif key == Enum.KeyCode.Space then
+            self._keys.Space = false
+
+        elseif key == Enum.KeyCode.LeftControl then
+            self._keys.LeftControl = false
+
+        elseif key == Enum.KeyCode.RightControl then
+            self._keys.RightControl = false
+        end
+    end))
+
+    ------------------------------------------------------------
+    -- 無限跳
+    ------------------------------------------------------------
+
+    table.insert(self.Connections, UserInputService.JumpRequest:Connect(function()
+        if not self.InfiniteJump then
+            return
+        end
+
+        local humanoid = getHumanoid()
+        if humanoid then
+            pcall(function()
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end)
+        end
+    end))
+
+    ------------------------------------------------------------
+    -- 角色重生
+    ------------------------------------------------------------
+
+    local player = self.Player
+
+    if player then
+        table.insert(self.CharacterConnections, player.CharacterAdded:Connect(function(character)
+            self._character = character
+
+            self._root = nil
+            self._humanoid = nil
+
+            ----------------------------------------------------
+            -- 舊角色的飛行物件清理掉
+            ----------------------------------------------------
+
+            self:ClearFlightForce()
+
+            task.wait(0.2)
+
+            if self._destroyed then
+                return
+            end
+
+            self:ApplyCharacterSettings()
+
+            if self.Noclip then
+                task.wait(0.1)
+                self:SetNoclip(true)
+            end
+
+            if self.Flying then
+                self:StartFlight()
+            end
+        end))
+    end
+
+    ------------------------------------------------------------
+    -- RenderStepped
+    ------------------------------------------------------------
+
+    table.insert(self.Connections, RunService.RenderStepped:Connect(function()
+        if self._destroyed then
+            return
+        end
+
+        self:UpdateFlight()
+        self:UpdateNoclip()
+    end))
+
+    self:ApplyCharacterSettings()
+    self:CreateUI()
+end
+
+----------------------------------------------------------------
+-- Cleanup
+----------------------------------------------------------------
+
 function Movement:Cleanup()
-    stopFlight()
-    for i = #self.Connections, 1, -1 do
+    if self._destroyed then
+        return
+    end
+
+    self._destroyed = true
+
+    ------------------------------------------------------------
+    -- 關閉飛行
+    ------------------------------------------------------------
+
+    self.Flying = false
+    self:ClearFlightForce()
+
+    ------------------------------------------------------------
+    -- 關閉 Noclip 並還原碰撞
+    ------------------------------------------------------------
+
+    self.Noclip = false
+
+    for object, originalValue in pairs(self.OriginalCanCollide) do
+        if object and object.Parent then
+            pcall(function()
+                object.CanCollide = originalValue
+            end)
+        end
+    end
+
+    self.OriginalCanCollide = {}
+
+    ------------------------------------------------------------
+    -- 還原角色
+    ------------------------------------------------------------
+
+    local humanoid = getHumanoid()
+
+    if humanoid then
         pcall(function()
-            self.Connections[i]:Disconnect()
+            humanoid.AutoRotate = true
+            humanoid.WalkSpeed = 16
+
+            if humanoid.UseJumpPower then
+                humanoid.JumpPower = 50
+            end
         end)
-        self.Connections[i] = nil
     end
-    clearFlightForce()
-    if Workspace then
-        Workspace.Gravity = 196.2
+
+    ------------------------------------------------------------
+    -- 還原重力
+    ------------------------------------------------------------
+
+    if self.OriginalGravity ~= nil then
+        pcall(function()
+            Workspace.Gravity = self.OriginalGravity
+        end)
     end
+
+    ------------------------------------------------------------
+    -- 清除輸入狀態
+    ------------------------------------------------------------
+
+    self._keys = {}
+
+    ------------------------------------------------------------
+    -- 斷開連線
+    ------------------------------------------------------------
+
+    for _, connection in ipairs(self.Connections) do
+        disconnect(connection)
+    end
+
+    for _, connection in ipairs(self.CharacterConnections) do
+        disconnect(connection)
+    end
+
+    self.Connections = {}
+    self.CharacterConnections = {}
 end
 
 return Movement
