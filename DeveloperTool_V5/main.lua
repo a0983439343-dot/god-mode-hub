@@ -10,72 +10,49 @@ local MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/a0983439343-dot/god-m
 local Player = Players.LocalPlayer
 
 local function loadDeveloperTool()
-    local success, result = pcall(function()
-        local source = game:HttpGet(MAIN_SCRIPT_URL)
-
-        if type(source) ~= "string" or source == "" then
-            error("主程式內容為空")
-        end
-
-        local func, err = loadstring(source)
-
-        if type(func) ~= "function" then
-            error(err or "loadstring 失敗")
-        end
-
-        return func()
-    end)
-
-    if not success then
-        warn("DeveloperTool V5 載入失敗: " .. tostring(result))
-        return false
-    end
-
-    return true
+    local success, result = pcall(function()
+        local source = game:HttpGet(MAIN_SCRIPT_URL)
+        if type(source) ~= "string" or source == "" or source:sub(1, 1) == "<" then
+            error("網址無效或內容錯誤")
+        end
+        local func, err = loadstring(source)
+        if type(func) ~= "function" then
+            error(err or "loadstring 失敗")
+        end
+        return func()
+    end)
+    if not success then
+        warn("載入失敗: " .. tostring(result))
+    end
 end
 
 if Player and Player.Name == CREATOR_NAME then
-    loadDeveloperTool()
-    return
+    loadDeveloperTool()
+    return
 end
 
 local oldGui = CoreGui:FindFirstChild("DeveloperToolV5_KeySystem")
-
 if oldGui then
-    oldGui:Destroy()
+    oldGui:Destroy()
 end
 
 local function getRequestFunction()
-    if type(request) == "function" then
-        return request
-    end
-
-    if type(http_request) == "function" then
-        return http_request
-    end
-
-    if syn and type(syn.request) == "function" then
-        return syn.request
-    end
-
-    if fluxus and type(fluxus.request) == "function" then
-        return fluxus.request
-    end
-
-    return nil
+    if type(request) == "function" then return request end
+    if type(http_request) == "function" then return http_request end
+    if syn and type(syn.request) == "function" then return syn.request end
+    if fluxus and type(fluxus.request) == "function" then return fluxus.request end
+    return nil
 end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "DeveloperToolV5_KeySystem"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = CoreGui
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 17, 23)
-MainFrame.BorderSizePixel = 0
 MainFrame.Position = UDim2.new(0.5, -160, 0.5, -130)
 MainFrame.Size = UDim2.new(0, 320, 0, 260)
 
@@ -85,7 +62,6 @@ Corner.Parent = MainFrame
 
 local Stroke = Instance.new("UIStroke")
 Stroke.Color = Color3.fromRGB(40, 46, 56)
-Stroke.Thickness = 1
 Stroke.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
@@ -103,15 +79,12 @@ local KeyInput = Instance.new("TextBox")
 KeyInput.Name = "KeyInput"
 KeyInput.Parent = MainFrame
 KeyInput.BackgroundColor3 = Color3.fromRGB(13, 17, 23)
-KeyInput.BorderSizePixel = 0
 KeyInput.Position = UDim2.new(0.1, 0, 0.23, 0)
 KeyInput.Size = UDim2.new(0.8, 0, 0, 38)
 KeyInput.Font = Enum.Font.Code
 KeyInput.PlaceholderText = "請輸入 Key..."
 KeyInput.Text = ""
-KeyInput.ClearTextOnFocus = false
 KeyInput.TextColor3 = Color3.fromRGB(126, 231, 135)
-KeyInput.PlaceholderColor3 = Color3.fromRGB(100, 110, 125)
 KeyInput.TextSize = 14
 
 local InputCorner = Instance.new("UICorner")
@@ -120,14 +93,12 @@ InputCorner.Parent = KeyInput
 
 local InputStroke = Instance.new("UIStroke")
 InputStroke.Color = Color3.fromRGB(40, 46, 56)
-InputStroke.Thickness = 1
 InputStroke.Parent = KeyInput
 
 local GetKeyBtn = Instance.new("TextButton")
 GetKeyBtn.Name = "GetKeyBtn"
 GetKeyBtn.Parent = MainFrame
 GetKeyBtn.BackgroundColor3 = Color3.fromRGB(33, 38, 45)
-GetKeyBtn.BorderSizePixel = 0
 GetKeyBtn.Position = UDim2.new(0.1, 0, 0.43, 0)
 GetKeyBtn.Size = UDim2.new(0.8, 0, 0, 36)
 GetKeyBtn.Font = Enum.Font.Gotham
@@ -143,7 +114,6 @@ local SubmitBtn = Instance.new("TextButton")
 SubmitBtn.Name = "SubmitBtn"
 SubmitBtn.Parent = MainFrame
 SubmitBtn.BackgroundColor3 = Color3.fromRGB(35, 134, 54)
-SubmitBtn.BorderSizePixel = 0
 SubmitBtn.Position = UDim2.new(0.1, 0, 0.62, 0)
 SubmitBtn.Size = UDim2.new(0.8, 0, 0, 38)
 SubmitBtn.Font = Enum.Font.GothamBold
@@ -171,147 +141,70 @@ local verifying = false
 local loaded = false
 
 local function setStatus(text, color)
-    StatusLabel.Text = tostring(text)
-    StatusLabel.TextColor3 = color
+    StatusLabel.Text = tostring(text)
+    StatusLabel.TextColor3 = color
 end
 
 local function verifyKey()
-    if verifying or loaded then
-        return
-    end
-
-    local key = tostring(KeyInput.Text or "")
-    key = key:gsub("^%s+", ""):gsub("%s+$", "")
-
-    if key == "" then
-        setStatus("請先輸入 Key", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    local requestFunction = getRequestFunction()
-
-    if not requestFunction then
-        setStatus("目前環境不支援 HTTP Request", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    verifying = true
-    SubmitBtn.Text = "驗證中..."
-    SubmitBtn.Active = false
-    GetKeyBtn.Active = false
-    KeyInput.Active = false
-
-    setStatus("正在驗證 Key...", Color3.fromRGB(139, 148, 158))
-
-    local success, response = pcall(function()
-        return requestFunction({
-            Url = API_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["Accept"] = "application/json"
-            },
-            Body = HttpService:JSONEncode({
-                key = key
-            })
-        })
-    end)
-
-    if not success or not response then
-        verifying = false
-        SubmitBtn.Text = "驗證"
-        SubmitBtn.Active = true
-        GetKeyBtn.Active = true
-        KeyInput.Active = true
-        setStatus("API 連線失敗", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    local statusCode = tonumber(response.StatusCode or response.Status or 0)
-    local body = tostring(response.Body or "")
-
-    if statusCode < 200 or statusCode >= 300 then
-        verifying = false
-        SubmitBtn.Text = "驗證"
-        SubmitBtn.Active = true
-        GetKeyBtn.Active = true
-        KeyInput.Active = true
-
-        local message = "API 回應錯誤 HTTP " .. tostring(statusCode)
-
-        if body ~= "" then
-            local decodeSuccess, data = pcall(function()
-                return HttpService:JSONDecode(body)
-            end)
-
-            if decodeSuccess and type(data) == "table" and data.message then
-                message = tostring(data.message)
-            end
-        end
-
-        setStatus(message, Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    local decodeSuccess, data = pcall(function()
-        return HttpService:JSONDecode(body)
-    end)
-
-    if not decodeSuccess or type(data) ~= "table" then
-        verifying = false
-        SubmitBtn.Text = "驗證"
-        SubmitBtn.Active = true
-        GetKeyBtn.Active = true
-        KeyInput.Active = true
-        setStatus("API 回傳資料格式錯誤", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    if data.valid == true then
-        loaded = true
-        setStatus("驗證成功！", Color3.fromRGB(126, 231, 135))
-        SubmitBtn.Text = "成功"
-        SubmitBtn.BackgroundColor3 = Color3.fromRGB(46, 160, 67)
-
-        task.wait(0.8)
-
-        if ScreenGui and ScreenGui.Parent then
-            ScreenGui:Destroy()
-        end
-
-        loadDeveloperTool()
-    else
-        verifying = false
-        SubmitBtn.Text = "驗證"
-        SubmitBtn.Active = true
-        GetKeyBtn.Active = true
-        KeyInput.Active = true
-        setStatus(data.message or "Key 驗證失敗", Color3.fromRGB(255, 80, 80))
-    end
+    if verifying or loaded then return end
+    local key = tostring(KeyInput.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if key == "" then
+        setStatus("請先輸入 Key", Color3.fromRGB(255, 80, 80))
+        return
+    end
+    local requestFunction = getRequestFunction()
+    if not requestFunction then
+        setStatus("環境不支援 HTTP Request", Color3.fromRGB(255, 80, 80))
+        return
+    end
+    verifying = true
+    SubmitBtn.Text = "驗證中..."
+    local success, response = pcall(function()
+        return requestFunction({
+            Url = API_URL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json", ["Accept"] = "application/json"},
+            Body = HttpService:JSONEncode({key = key})
+        })
+    end)
+    if not success or not response then
+        verifying = false
+        SubmitBtn.Text = "驗證"
+        setStatus("API 連線失敗", Color3.fromRGB(255, 80, 80))
+        return
+    end
+    local statusCode = tonumber(response.StatusCode or response.Status or 0)
+    local body = tostring(response.Body or "")
+    if statusCode < 200 or statusCode >= 300 then
+        verifying = false
+        SubmitBtn.Text = "驗證"
+        setStatus("API 回應錯誤", Color3.fromRGB(255, 80, 80))
+        return
+    end
+    local decodeSuccess, data = pcall(function() return HttpService:JSONDecode(body) end)
+    if decodeSuccess and type(data) == "table" and data.valid == true then
+        loaded = true
+        setStatus("驗證成功！", Color3.fromRGB(126, 231, 135))
+        task.wait(0.8)
+        if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
+        loadDeveloperTool()
+    else
+        verifying = false
+        SubmitBtn.Text = "驗證"
+        setStatus(data and data.message or "Key 驗證失敗", Color3.fromRGB(255, 80, 80))
+    end
 end
 
 GetKeyBtn.Activated:Connect(function()
-    if type(setclipboard) == "function" then
-        local success = pcall(function()
-            setclipboard(GET_KEY_URL)
-        end)
-
-        if success then
-            setStatus("已複製取 Key 網址！請貼至瀏覽器", Color3.fromRGB(126, 231, 135))
-        else
-            setStatus("複製失敗，請手動開啟網址", Color3.fromRGB(255, 200, 80))
-            print(GET_KEY_URL)
-        end
-    else
-        setStatus("環境不支援自動複製，網址已輸出至主控台", Color3.fromRGB(255, 200, 80))
-        print(GET_KEY_URL)
-    end
+    if type(setclipboard) == "function" then
+        pcall(function() setclipboard(GET_KEY_URL) end)
+        setStatus("已複製取 Key 網址！", Color3.fromRGB(126, 231, 135))
+    else
+        print(GET_KEY_URL)
+    end
 end)
 
 SubmitBtn.Activated:Connect(verifyKey)
-
 KeyInput.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        verifyKey()
-    end
+    if enterPressed then verifyKey() end
 end)
