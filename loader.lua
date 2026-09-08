@@ -6,7 +6,7 @@ local CREATOR_NAME = "jdkdkdkdkekejekeieke"
 local GET_KEY_URL = "https://devtool-key-system.a0983439343.workers.dev/"
 
 local function loadDeveloperTool()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/a0983439343-dot/god-mode-hub/refs/heads/main/god-mode-hub-main/DeveloperTool_V5/loader.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/a0983439343-dot/god-mode-hub/refs/heads/main/DeveloperTool_V5/main.lua"))()
 end
 
 local Player = Players.LocalPlayer
