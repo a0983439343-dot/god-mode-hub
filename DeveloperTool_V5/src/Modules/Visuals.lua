@@ -67,6 +67,7 @@ local Visuals = {
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 
@@ -117,6 +118,34 @@ local function getRoot()
     return character:FindFirstChild("HumanoidRootPart")
 end
 
+local function isMouseOverGui()
+    local mousePosition =
+        UserInputService:GetMouseLocation()
+
+    local ok, objects =
+        pcall(function()
+            return GuiService:GetGuiObjectsAtPosition(
+                mousePosition.X,
+                mousePosition.Y
+            )
+        end)
+
+    if not ok or not objects then
+        return false
+    end
+
+    for _, object in ipairs(objects) do
+        if object
+            and object:IsA("GuiObject")
+            and object.Visible
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function backupFOV(self)
     if self.OriginalFOV ~= nil then
         return
@@ -124,7 +153,9 @@ local function backupFOV(self)
 
     local camera = getCamera()
 
-    self.OriginalFOV = camera and camera.FieldOfView or 70
+    self.OriginalFOV =
+        camera and camera.FieldOfView or 70
+
     self.FOV = self.OriginalFOV
 end
 
@@ -138,9 +169,11 @@ local function backupLighting(self)
         ClockTime = Lighting.ClockTime,
         FogEnd = Lighting.FogEnd,
         GlobalShadows = Lighting.GlobalShadows,
-        ExposureCompensation = Lighting.ExposureCompensation,
+        ExposureCompensation =
+            Lighting.ExposureCompensation,
         Ambient = Lighting.Ambient,
-        OutdoorAmbient = Lighting.OutdoorAmbient
+        OutdoorAmbient =
+            Lighting.OutdoorAmbient
     }
 end
 
@@ -165,13 +198,26 @@ local function setFullbright(self, enabled)
 
     if self.OriginalLighting then
         pcall(function()
-            Lighting.Brightness = self.OriginalLighting.Brightness
-            Lighting.ClockTime = self.OriginalLighting.ClockTime
-            Lighting.FogEnd = self.OriginalLighting.FogEnd
-            Lighting.GlobalShadows = self.OriginalLighting.GlobalShadows
-            Lighting.ExposureCompensation = self.OriginalLighting.ExposureCompensation
-            Lighting.Ambient = self.OriginalLighting.Ambient
-            Lighting.OutdoorAmbient = self.OriginalLighting.OutdoorAmbient
+            Lighting.Brightness =
+                self.OriginalLighting.Brightness
+
+            Lighting.ClockTime =
+                self.OriginalLighting.ClockTime
+
+            Lighting.FogEnd =
+                self.OriginalLighting.FogEnd
+
+            Lighting.GlobalShadows =
+                self.OriginalLighting.GlobalShadows
+
+            Lighting.ExposureCompensation =
+                self.OriginalLighting.ExposureCompensation
+
+            Lighting.Ambient =
+                self.OriginalLighting.Ambient
+
+            Lighting.OutdoorAmbient =
+                self.OriginalLighting.OutdoorAmbient
         end)
     end
 end
@@ -182,7 +228,8 @@ local function disableAtmosphereItem(self, item)
     end
 
     if self.AtmosphereBackup[item] == nil then
-        self.AtmosphereBackup[item] = item.Parent
+        self.AtmosphereBackup[item] =
+            item.Parent
     end
 
     pcall(function()
@@ -191,7 +238,9 @@ local function disableAtmosphereItem(self, item)
 end
 
 local function restoreAtmosphere(self)
-    for item, originalParent in pairs(self.AtmosphereBackup) do
+    for item, originalParent
+        in pairs(self.AtmosphereBackup)
+    do
         if item and originalParent then
             pcall(function()
                 item.Parent = originalParent
@@ -217,14 +266,20 @@ local function setRemoveAtmosphere(self, enabled)
     end
 
     task.spawn(function()
-        local descendants = Lighting:GetDescendants()
+        local descendants =
+            Lighting:GetDescendants()
 
         for i = 1, #descendants do
-            if not self.Alive or not self.RemoveAtmosphere then
+            if not self.Alive
+                or not self.RemoveAtmosphere
+            then
                 return
             end
 
-            disableAtmosphereItem(self, descendants[i])
+            disableAtmosphereItem(
+                self,
+                descendants[i]
+            )
 
             if i % 100 == 0 then
                 task.wait()
@@ -233,15 +288,24 @@ local function setRemoveAtmosphere(self, enabled)
     end)
 
     self.AtmosphereConnection =
-        Lighting.DescendantAdded:Connect(function(item)
-            if self.Alive and self.RemoveAtmosphere then
-                task.defer(function()
-                    if self.Alive and self.RemoveAtmosphere then
-                        disableAtmosphereItem(self, item)
-                    end
-                end)
+        Lighting.DescendantAdded:Connect(
+            function(item)
+                if self.Alive
+                    and self.RemoveAtmosphere
+                then
+                    task.defer(function()
+                        if self.Alive
+                            and self.RemoveAtmosphere
+                        then
+                            disableAtmosphereItem(
+                                self,
+                                item
+                            )
+                        end
+                    end)
+                end
             end
-        end)
+        )
 end
 
 local function isPostEffect(item)
@@ -259,7 +323,8 @@ local function disablePostEffectItem(self, item)
     end
 
     if self.PostEffectsBackup[item] == nil then
-        self.PostEffectsBackup[item] = item.Enabled
+        self.PostEffectsBackup[item] =
+            item.Enabled
     end
 
     pcall(function()
@@ -268,7 +333,9 @@ local function disablePostEffectItem(self, item)
 end
 
 local function restorePostEffects(self)
-    for item, original in pairs(self.PostEffectsBackup) do
+    for item, original
+        in pairs(self.PostEffectsBackup)
+    do
         if item and item.Parent then
             pcall(function()
                 item.Enabled = original
@@ -294,14 +361,20 @@ local function setRemovePostEffects(self, enabled)
     end
 
     task.spawn(function()
-        local descendants = Lighting:GetDescendants()
+        local descendants =
+            Lighting:GetDescendants()
 
         for i = 1, #descendants do
-            if not self.Alive or not self.RemovePostEffects then
+            if not self.Alive
+                or not self.RemovePostEffects
+            then
                 return
             end
 
-            disablePostEffectItem(self, descendants[i])
+            disablePostEffectItem(
+                self,
+                descendants[i]
+            )
 
             if i % 100 == 0 then
                 task.wait()
@@ -310,15 +383,24 @@ local function setRemovePostEffects(self, enabled)
     end)
 
     self.PostEffectConnection =
-        Lighting.DescendantAdded:Connect(function(item)
-            if self.Alive and self.RemovePostEffects then
-                task.defer(function()
-                    if self.Alive and self.RemovePostEffects then
-                        disablePostEffectItem(self, item)
-                    end
-                end)
+        Lighting.DescendantAdded:Connect(
+            function(item)
+                if self.Alive
+                    and self.RemovePostEffects
+                then
+                    task.defer(function()
+                        if self.Alive
+                            and self.RemovePostEffects
+                        then
+                            disablePostEffectItem(
+                                self,
+                                item
+                            )
+                        end
+                    end)
+                end
             end
-        end)
+        )
 end
 
 local function backupZoom(self)
@@ -326,24 +408,35 @@ local function backupZoom(self)
         return
     end
 
-    self.OriginalCameraMinZoomDistance = Player.CameraMinZoomDistance
-    self.OriginalCameraMaxZoomDistance = Player.CameraMaxZoomDistance
-    self.OriginalCameraMode = Player.CameraMode
+    self.OriginalCameraMinZoomDistance =
+        Player.CameraMinZoomDistance
+
+    self.OriginalCameraMaxZoomDistance =
+        Player.CameraMaxZoomDistance
+
+    self.OriginalCameraMode =
+        Player.CameraMode
 
     local camera = getCamera()
     local root = getRoot()
 
     if camera and root then
-        local focusPosition = root.Position + Vector3.new(0, 2, 0)
+        local focusPosition =
+            root.Position + Vector3.new(0, 2, 0)
 
-        self.ZoomDistance = math.clamp(
-            (camera.CFrame.Position - focusPosition).Magnitude,
-            0.5,
-            self.ZoomMaxDistance
-        )
+        self.ZoomDistance =
+            math.clamp(
+                (
+                    camera.CFrame.Position
+                    - focusPosition
+                ).Magnitude,
+                0.5,
+                self.ZoomMaxDistance
+            )
     end
 
-    self.OriginalZoomDistance = self.ZoomDistance
+    self.OriginalZoomDistance =
+        self.ZoomDistance
 end
 
 local function stopZoomWatcher(self)
@@ -353,7 +446,9 @@ local function stopZoomWatcher(self)
 
     if self.ZoomRenderConnection then
         pcall(function()
-            RunService:UnbindFromRenderStep("DeveloperV5_CustomZoom")
+            RunService:UnbindFromRenderStep(
+                "DeveloperV5_CustomZoom"
+            )
         end)
     end
 
@@ -364,7 +459,9 @@ local function stopZoomWatcher(self)
 end
 
 local function enforceZoomLimit(self)
-    if not self.Alive or not self.ZoomUnlock then
+    if not self.Alive
+        or not self.ZoomUnlock
+    then
         return
     end
 
@@ -373,18 +470,27 @@ local function enforceZoomLimit(self)
             Player.CameraMinZoomDistance = 0.5
         end
 
-        if Player.CameraMaxZoomDistance ~= self.ZoomMaxDistance then
-            Player.CameraMaxZoomDistance = self.ZoomMaxDistance
+        if Player.CameraMaxZoomDistance
+            ~= self.ZoomMaxDistance
+        then
+            Player.CameraMaxZoomDistance =
+                self.ZoomMaxDistance
         end
 
-        if Player.CameraMode ~= Enum.CameraMode.Classic then
-            Player.CameraMode = Enum.CameraMode.Classic
+        if Player.CameraMode
+            ~= Enum.CameraMode.Classic
+        then
+            Player.CameraMode =
+                Enum.CameraMode.Classic
         end
     end)
 end
 
 local function customZoomRender(self)
-    if not self.Alive or not self.ZoomUnlock or self.FreeCam then
+    if not self.Alive
+        or not self.ZoomUnlock
+        or self.FreeCam
+    then
         return
     end
 
@@ -395,7 +501,9 @@ local function customZoomRender(self)
         return
     end
 
-    if camera.CameraType == Enum.CameraType.Scriptable then
+    if camera.CameraType
+        == Enum.CameraType.Scriptable
+    then
         return
     end
 
@@ -425,7 +533,14 @@ local function customZoomRender(self)
 end
 
 local function applyZoomStep(self, direction)
-    if not self.Alive or not self.ZoomUnlock or self.FreeCam then
+    if not self.Alive
+        or not self.ZoomUnlock
+        or self.FreeCam
+    then
+        return
+    end
+
+    if isMouseOverGui() then
         return
     end
 
@@ -440,26 +555,34 @@ local function applyZoomStep(self, direction)
         root.Position + Vector3.new(0, 2, 0)
 
     local currentDistance =
-        (camera.CFrame.Position - focusPosition).Magnitude
+        (
+            camera.CFrame.Position
+            - focusPosition
+        ).Magnitude
 
     if currentDistance > 0.5
-        and currentDistance < self.ZoomMaxDistance + 1
+        and currentDistance
+            < self.ZoomMaxDistance + 1
     then
-        self.ZoomDistance = currentDistance
+        self.ZoomDistance =
+            currentDistance
     end
 
-    self.ZoomDistance = math.clamp(
-        self.ZoomDistance + direction * self.ZoomStep,
-        0.5,
-        self.ZoomMaxDistance
-    )
+    self.ZoomDistance =
+        math.clamp(
+            self.ZoomDistance
+                + direction * self.ZoomStep,
+            0.5,
+            self.ZoomMaxDistance
+        )
 end
 
 local function setZoomUnlock(self, enabled)
     backupZoom(self)
     stopZoomWatcher(self)
 
-    self.ZoomUnlock = enabled == true
+    self.ZoomUnlock =
+        enabled == true
 
     if not self.ZoomUnlock then
         pcall(function()
@@ -487,7 +610,10 @@ local function setZoomUnlock(self, enabled)
 
         self.ZoomDistance =
             math.clamp(
-                (camera.CFrame.Position - focusPosition).Magnitude,
+                (
+                    camera.CFrame.Position
+                    - focusPosition
+                ).Magnitude,
                 0.5,
                 self.ZoomMaxDistance
             )
@@ -499,9 +625,13 @@ local function setZoomUnlock(self, enabled)
         Player:GetPropertyChangedSignal(
             "CameraMinZoomDistance"
         ):Connect(function()
-            if self.Alive and self.ZoomUnlock then
+            if self.Alive
+                and self.ZoomUnlock
+            then
                 pcall(function()
-                    if Player.CameraMinZoomDistance ~= 0.5 then
+                    if Player.CameraMinZoomDistance
+                        ~= 0.5
+                    then
                         Player.CameraMinZoomDistance = 0.5
                     end
                 end)
@@ -512,9 +642,13 @@ local function setZoomUnlock(self, enabled)
         Player:GetPropertyChangedSignal(
             "CameraMaxZoomDistance"
         ):Connect(function()
-            if self.Alive and self.ZoomUnlock then
+            if self.Alive
+                and self.ZoomUnlock
+            then
                 pcall(function()
-                    if Player.CameraMaxZoomDistance ~= self.ZoomMaxDistance then
+                    if Player.CameraMaxZoomDistance
+                        ~= self.ZoomMaxDistance
+                    then
                         Player.CameraMaxZoomDistance =
                             self.ZoomMaxDistance
                     end
@@ -523,18 +657,27 @@ local function setZoomUnlock(self, enabled)
         end)
 
     self.ZoomConnection =
-        UserInputService.InputChanged:Connect(function(input)
-            if not self.Alive
-                or not self.ZoomUnlock
-                or self.FreeCam
-            then
-                return
-            end
+        UserInputService.InputChanged:Connect(
+            function(input)
+                if not self.Alive
+                    or not self.ZoomUnlock
+                    or self.FreeCam
+                then
+                    return
+                end
 
-            if input.UserInputType ==
-                Enum.UserInputType.MouseWheel
-            then
-                local wheel = input.Position.Z
+                if input.UserInputType
+                    ~= Enum.UserInputType.MouseWheel
+                then
+                    return
+                end
+
+                if isMouseOverGui() then
+                    return
+                end
+
+                local wheel =
+                    input.Position.Z
 
                 if wheel > 0 then
                     applyZoomStep(
@@ -548,7 +691,7 @@ local function setZoomUnlock(self, enabled)
                     )
                 end
             end
-        end)
+        )
 
     pcall(function()
         RunService:UnbindFromRenderStep(
@@ -568,10 +711,21 @@ local function setZoomUnlock(self, enabled)
 end
 
 local function stopFreeCamConnections(self)
-    disconnect(self.FreeCamInputConnection)
-    disconnect(self.FreeCamInputBeganConnection)
-    disconnect(self.FreeCamInputEndedConnection)
-    disconnect(self.FreeCamRenderConnection)
+    disconnect(
+        self.FreeCamInputConnection
+    )
+
+    disconnect(
+        self.FreeCamInputBeganConnection
+    )
+
+    disconnect(
+        self.FreeCamInputEndedConnection
+    )
+
+    disconnect(
+        self.FreeCamRenderConnection
+    )
 
     self.FreeCamInputConnection = nil
     self.FreeCamInputBeganConnection = nil
@@ -588,11 +742,16 @@ local function rotationCFrame(self)
 end
 
 local function restoreFreeCamCharacter(self)
-    local backup = self.FreeCamHumanoidBackup
+    local backup =
+        self.FreeCamHumanoidBackup
+
     local humanoid =
         backup and backup.Humanoid
 
-    if humanoid and humanoid.Parent and backup then
+    if humanoid
+        and humanoid.Parent
+        and backup
+    then
         pcall(function()
             humanoid.WalkSpeed =
                 backup.WalkSpeed
@@ -751,11 +910,19 @@ local function startFreeCam(self)
 
     local root =
         character
-        and character:FindFirstChild("HumanoidRootPart")
+        and character:FindFirstChild(
+            "HumanoidRootPart"
+        )
 
-    if humanoid and root and humanoid.Health > 0 then
-        self.FreeCamCharacter = character
-        self.FreeCamCharacterCFrame = root.CFrame
+    if humanoid
+        and root
+        and humanoid.Health > 0
+    then
+        self.FreeCamCharacter =
+            character
+
+        self.FreeCamCharacterCFrame =
+            root.CFrame
 
         self.FreeCamHumanoidBackup = {
             Humanoid = humanoid,
@@ -775,7 +942,10 @@ local function startFreeCam(self)
         end
 
         humanoid.AutoRotate = false
-        humanoid:Move(Vector3.zero, false)
+        humanoid:Move(
+            Vector3.zero,
+            false
+        )
     end
 
     local rx, ry =
@@ -807,8 +977,8 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType ==
-                    Enum.UserInputType.MouseButton2
+                if input.UserInputType
+                    == Enum.UserInputType.MouseButton2
                 then
                     self.FreeCamRotating = true
                     setMouseRotate()
@@ -819,10 +989,12 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType ==
-                    Enum.UserInputType.Keyboard
+                if input.UserInputType
+                    == Enum.UserInputType.Keyboard
                 then
-                    Keys[input.KeyCode.Name] = true
+                    Keys[
+                        input.KeyCode.Name
+                    ] = true
                 end
             end
         )
@@ -830,18 +1002,20 @@ local function startFreeCam(self)
     self.FreeCamInputEndedConnection =
         UserInputService.InputEnded:Connect(
             function(input)
-                if input.UserInputType ==
-                    Enum.UserInputType.MouseButton2
+                if input.UserInputType
+                    == Enum.UserInputType.MouseButton2
                 then
                     self.FreeCamRotating = false
                     setMouseNormal()
                     return
                 end
 
-                if input.UserInputType ==
-                    Enum.UserInputType.Keyboard
+                if input.UserInputType
+                    == Enum.UserInputType.Keyboard
                 then
-                    Keys[input.KeyCode.Name] = false
+                    Keys[
+                        input.KeyCode.Name
+                    ] = false
                 end
             end
         )
@@ -856,8 +1030,8 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType ==
-                    Enum.UserInputType.MouseMovement
+                if input.UserInputType
+                    == Enum.UserInputType.MouseMovement
                 then
                     self.FreeCamYaw -=
                         input.Delta.X * 0.0025
@@ -869,8 +1043,8 @@ local function startFreeCam(self)
                             math.rad(-89),
                             math.rad(89)
                         )
-                elseif input.UserInputType ==
-                    Enum.UserInputType.Touch
+                elseif input.UserInputType
+                    == Enum.UserInputType.Touch
                 then
                     self.FreeCamYaw -=
                         input.Delta.X * 0.004
@@ -962,17 +1136,22 @@ local function startFreeCam(self)
                 end
 
                 local move =
-                    rotation.LookVector * forward
-                    + rotation.RightVector * side
-                    + Vector3.yAxis * vertical
+                    rotation.LookVector
+                    * forward
+                    + rotation.RightVector
+                    * side
+                    + Vector3.yAxis
+                    * vertical
 
                 if move.Magnitude > 1 then
                     move = move.Unit
                 end
 
                 local speed =
-                    (Keys.LeftShift
-                        or Keys.RightShift)
+                    (
+                        Keys.LeftShift
+                        or Keys.RightShift
+                    )
                     and 180
                     or 70
 
@@ -1004,30 +1183,49 @@ local function startFreeCam(self)
         )
 end
 
-local function objectRadarClassMatch(self, object)
-    if self.ObjectRadarMode == "全部物件" then
+local function objectRadarClassMatch(
+    self,
+    object
+)
+    if self.ObjectRadarMode ==
+        "全部物件"
+    then
         return true
     end
 
-    if self.ObjectRadarMode == "模型" then
+    if self.ObjectRadarMode ==
+        "模型"
+    then
         return object:IsA("Model")
     end
 
-    if self.ObjectRadarMode == "零件" then
+    if self.ObjectRadarMode ==
+        "零件"
+    then
         return object:IsA("BasePart")
     end
 
-    if self.ObjectRadarMode == "NPC" then
+    if self.ObjectRadarMode ==
+        "NPC"
+    then
         return object:IsA("Model")
-            and object:FindFirstChildOfClass("Humanoid") ~= nil
-            and not Players:GetPlayerFromCharacter(object)
+            and object:FindFirstChildOfClass(
+                "Humanoid"
+            ) ~= nil
+            and not Players:GetPlayerFromCharacter(
+                object
+            )
     end
 
-    if self.ObjectRadarMode == "工具" then
+    if self.ObjectRadarMode ==
+        "工具"
+    then
         return object:IsA("Tool")
     end
 
-    if self.ObjectRadarMode == "互動物件" then
+    if self.ObjectRadarMode ==
+        "互動物件"
+    then
         return object:IsA("ProximityPrompt")
             or object:IsA("ClickDetector")
             or object:IsA("TouchTransmitter")
@@ -1045,7 +1243,9 @@ local function clearObjectRadar(self)
 
     self.ObjectRadarFolder = nil
 
-    table.clear(self.ObjectRadarCache)
+    table.clear(
+        self.ObjectRadarCache
+    )
 end
 
 local function getObjectPosition(object)
@@ -1054,14 +1254,17 @@ local function getObjectPosition(object)
     end
 
     if object:IsA("Model") then
-        local primary = object.PrimaryPart
+        local primary =
+            object.PrimaryPart
 
         if primary then
             return primary.Position
         end
 
         local root =
-            object:FindFirstChild("HumanoidRootPart")
+            object:FindFirstChild(
+                "HumanoidRootPart"
+            )
 
         if root and root:IsA("BasePart") then
             return root.Position
@@ -1070,13 +1273,19 @@ local function getObjectPosition(object)
 
     local parent = object.Parent
 
-    if parent and parent:IsA("BasePart") then
+    if parent
+        and parent:IsA("BasePart")
+    then
         return parent.Position
     end
 
-    if parent and parent:IsA("Model") then
+    if parent
+        and parent:IsA("Model")
+    then
         local root =
-            parent:FindFirstChild("HumanoidRootPart")
+            parent:FindFirstChild(
+                "HumanoidRootPart"
+            )
             or parent.PrimaryPart
 
         if root and root:IsA("BasePart") then
@@ -1135,7 +1344,8 @@ local function buildObjectRadar(self)
         local object =
             descendants[i]
 
-        if object ~= self.ObjectRadarFolder
+        if object
+            ~= self.ObjectRadarFolder
             and not object:IsDescendantOf(
                 self.ObjectRadarFolder
             )
@@ -1212,7 +1422,9 @@ local function buildObjectRadar(self)
             item
             and item.Marker
 
-        if marker and marker.Parent then
+        if marker
+            and marker.Parent
+        then
             pcall(function()
                 marker:Destroy()
             end)
@@ -1222,7 +1434,9 @@ end
 
 local function stopObjectRadar(self)
     if self.ObjectRadarConnection then
-        task.cancel(self.ObjectRadarConnection)
+        task.cancel(
+            self.ObjectRadarConnection
+        )
     end
 
     self.ObjectRadarConnection = nil
@@ -1252,7 +1466,8 @@ local function startObjectRadar(self)
 end
 
 local function setObjectRadar(self, enabled)
-    self.ObjectRadar = enabled == true
+    self.ObjectRadar =
+        enabled == true
 
     if self.ObjectRadar then
         startObjectRadar(self)
@@ -1267,17 +1482,30 @@ local function backupLightingStudio(self)
     end
 
     self.LightingStudioBackup = {
-        Brightness = Lighting.Brightness,
+        Brightness =
+            Lighting.Brightness,
+
         ExposureCompensation =
             Lighting.ExposureCompensation,
-        ClockTime = Lighting.ClockTime,
-        GlobalShadows = Lighting.GlobalShadows,
-        Ambient = Lighting.Ambient,
-        OutdoorAmbient = Lighting.OutdoorAmbient
+
+        ClockTime =
+            Lighting.ClockTime,
+
+        GlobalShadows =
+            Lighting.GlobalShadows,
+
+        Ambient =
+            Lighting.Ambient,
+
+        OutdoorAmbient =
+            Lighting.OutdoorAmbient
     }
 end
 
-local function removeLightingEffect(self, field)
+local function removeLightingEffect(
+    self,
+    field
+)
     local effect = self[field]
 
     if effect then
@@ -1289,7 +1517,11 @@ local function removeLightingEffect(self, field)
     end
 end
 
-local function createLightingEffect(self, className, field)
+local function createLightingEffect(
+    self,
+    className,
+    field
+)
     if self[field]
         and self[field].Parent
     then
@@ -1360,6 +1592,7 @@ local function updateLightingStudio(self)
         effect.Brightness = 0.05
         effect.Contrast = 0.1
         effect.Saturation = 0.05
+
         effect.TintColor =
             Color3.fromRGB(
                 255,
@@ -1482,7 +1715,10 @@ local function restoreLightingStudio(self)
     self.LightingStudioBackup = nil
 end
 
-local function setLightingStudio(self, enabled)
+local function setLightingStudio(
+    self,
+    enabled
+)
     self.LightingStudio =
         enabled == true
 
@@ -1493,7 +1729,10 @@ local function setLightingStudio(self, enabled)
     end
 end
 
-local function createLightingControls(self, tab)
+local function createLightingControls(
+    self,
+    tab
+)
     tab:CreateSection("高級光影")
 
     tab:CreateToggle({
@@ -1501,7 +1740,10 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5LightingStudio",
         Callback = function(value)
-            setLightingStudio(self, value)
+            setLightingStudio(
+                self,
+                value
+            )
         end
     })
 
@@ -1510,7 +1752,9 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5SoftBloom",
         Callback = function(value)
-            self.LightingStudioBloom = value
+            self.LightingStudioBloom =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1520,7 +1764,9 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5CinemaColor",
         Callback = function(value)
-            self.LightingStudioColor = value
+            self.LightingStudioColor =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1530,7 +1776,9 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5SunRays",
         Callback = function(value)
-            self.LightingStudioSunRays = value
+            self.LightingStudioSunRays =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1540,7 +1788,9 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5DepthOfField",
         Callback = function(value)
-            self.LightingStudioDepth = value
+            self.LightingStudioDepth =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1550,7 +1800,9 @@ local function createLightingControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5SoftBlur",
         Callback = function(value)
-            self.LightingStudioBlur = value
+            self.LightingStudioBlur =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1560,7 +1812,9 @@ local function createLightingControls(self, tab)
         CurrentValue = true,
         Flag = "DeveloperV5EnhancedShadow",
         Callback = function(value)
-            self.LightingStudioShadow = value
+            self.LightingStudioShadow =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1569,11 +1823,14 @@ local function createLightingControls(self, tab)
         Name = "光影亮度",
         Range = {0, 10},
         Increment = 0.1,
-        CurrentValue = self.LightingStudioBrightness,
+        CurrentValue =
+            self.LightingStudioBrightness,
         Suffix = "",
         Flag = "DeveloperV5LightingBrightness",
         Callback = function(value)
-            self.LightingStudioBrightness = value
+            self.LightingStudioBrightness =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1582,11 +1839,14 @@ local function createLightingControls(self, tab)
         Name = "曝光強度",
         Range = {-5, 5},
         Increment = 0.1,
-        CurrentValue = self.LightingStudioExposure,
+        CurrentValue =
+            self.LightingStudioExposure,
         Suffix = "",
         Flag = "DeveloperV5LightingExposure",
         Callback = function(value)
-            self.LightingStudioExposure = value
+            self.LightingStudioExposure =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1595,11 +1855,14 @@ local function createLightingControls(self, tab)
         Name = "世界時間",
         Range = {0, 24},
         Increment = 0.1,
-        CurrentValue = self.LightingStudioClockTime,
+        CurrentValue =
+            self.LightingStudioClockTime,
         Suffix = "",
         Flag = "DeveloperV5LightingTime",
         Callback = function(value)
-            self.LightingStudioClockTime = value
+            self.LightingStudioClockTime =
+                value
+
             updateLightingStudio(self)
         end
     })
@@ -1620,7 +1883,10 @@ local function createLightingControls(self, tab)
     })
 end
 
-local function createObjectRadarControls(self, tab)
+local function createObjectRadarControls(
+    self,
+    tab
+)
     tab:CreateSection("物件雷達")
 
     tab:CreateToggle({
@@ -1628,7 +1894,10 @@ local function createObjectRadarControls(self, tab)
         CurrentValue = false,
         Flag = "DeveloperV5ObjectRadar",
         Callback = function(value)
-            setObjectRadar(self, value)
+            setObjectRadar(
+                self,
+                value
+            )
         end
     })
 
@@ -1642,7 +1911,9 @@ local function createObjectRadarControls(self, tab)
             "工具",
             "互動物件"
         },
-        CurrentOption = {"全部物件"},
+        CurrentOption = {
+            "全部物件"
+        },
         MultipleOptions = false,
         Flag = "DeveloperV5ObjectRadarType",
         Callback = function(options)
@@ -1662,11 +1933,13 @@ local function createObjectRadarControls(self, tab)
         Name = "偵測距離",
         Range = {25, 2000},
         Increment = 25,
-        CurrentValue = self.ObjectRadarDistance,
+        CurrentValue =
+            self.ObjectRadarDistance,
         Suffix = "",
         Flag = "DeveloperV5RadarDistance",
         Callback = function(value)
-            self.ObjectRadarDistance = value
+            self.ObjectRadarDistance =
+                value
         end
     })
 
@@ -1674,11 +1947,13 @@ local function createObjectRadarControls(self, tab)
         Name = "最大標記數",
         Range = {10, 150},
         Increment = 10,
-        CurrentValue = self.ObjectRadarMax,
+        CurrentValue =
+            self.ObjectRadarMax,
         Suffix = "",
         Flag = "DeveloperV5RadarMax",
         Callback = function(value)
-            self.ObjectRadarMax = value
+            self.ObjectRadarMax =
+                value
         end
     })
 
@@ -1686,11 +1961,13 @@ local function createObjectRadarControls(self, tab)
         Name = "掃描間隔",
         Range = {0.5, 5},
         Increment = 0.5,
-        CurrentValue = self.ObjectRadarRefresh,
+        CurrentValue =
+            self.ObjectRadarRefresh,
         Suffix = " 秒",
         Flag = "DeveloperV5RadarRefresh",
         Callback = function(value)
-            self.ObjectRadarRefresh = value
+            self.ObjectRadarRefresh =
+                value
 
             if self.ObjectRadar then
                 startObjectRadar(self)
@@ -1727,46 +2004,51 @@ function Visuals:Init(context)
 
     addConnection(
         self,
-        Player.CharacterAdded:Connect(function()
-            if self.FreeCam then
-                stopFreeCam(self, true)
-            end
-
-            task.defer(function()
-                if not self.Alive then
-                    return
+        Player.CharacterAdded:Connect(
+            function()
+                if self.FreeCam then
+                    stopFreeCam(self, true)
                 end
 
-                if self.ZoomUnlock then
-                    local camera = getCamera()
-                    local root = getRoot()
-
-                    if camera and root then
-                        local focusPosition =
-                            root.Position
-                            + Vector3.new(0, 2, 0)
-
-                        self.ZoomDistance =
-                            math.clamp(
-                                (
-                                    camera.CFrame.Position
-                                    - focusPosition
-                                ).Magnitude,
-                                0.5,
-                                self.ZoomMaxDistance
-                            )
+                task.defer(function()
+                    if not self.Alive then
+                        return
                     end
 
-                    enforceZoomLimit(self)
-                end
+                    if self.ZoomUnlock then
+                        local camera =
+                            getCamera()
 
-                if self.ObjectRadar then
-                    task.spawn(function()
-                        buildObjectRadar(self)
-                    end)
-                end
-            end)
-        end)
+                        local root =
+                            getRoot()
+
+                        if camera and root then
+                            local focusPosition =
+                                root.Position
+                                + Vector3.new(0, 2, 0)
+
+                            self.ZoomDistance =
+                                math.clamp(
+                                    (
+                                        camera.CFrame.Position
+                                        - focusPosition
+                                    ).Magnitude,
+                                    0.5,
+                                    self.ZoomMaxDistance
+                                )
+                        end
+
+                        enforceZoomLimit(self)
+                    end
+
+                    if self.ObjectRadar then
+                        task.spawn(function()
+                            buildObjectRadar(self)
+                        end)
+                    end
+                end)
+            end
+        )
     )
 
     addConnection(
@@ -1783,10 +2065,12 @@ function Visuals:Init(context)
                     return
                 end
 
-                if input.UserInputType ==
-                    Enum.UserInputType.Keyboard
+                if input.UserInputType
+                    == Enum.UserInputType.Keyboard
                 then
-                    Keys[input.KeyCode.Name] = true
+                    Keys[
+                        input.KeyCode.Name
+                    ] = true
                 end
             end
         )
@@ -1796,10 +2080,12 @@ function Visuals:Init(context)
         self,
         UserInputService.InputEnded:Connect(
             function(input)
-                if input.UserInputType ==
-                    Enum.UserInputType.Keyboard
+                if input.UserInputType
+                    == Enum.UserInputType.Keyboard
                 then
-                    Keys[input.KeyCode.Name] = false
+                    Keys[
+                        input.KeyCode.Name
+                    ] = false
                 end
             end
         )
@@ -1814,7 +2100,10 @@ function Visuals:Init(context)
         CurrentValue = false,
         Flag = "DeveloperV5Fullbright",
         Callback = function(value)
-            setFullbright(self, value)
+            setFullbright(
+                self,
+                value
+            )
         end
     })
 
@@ -1823,7 +2112,10 @@ function Visuals:Init(context)
         CurrentValue = false,
         Flag = "DeveloperV5RemoveAtmosphere",
         Callback = function(value)
-            setRemoveAtmosphere(self, value)
+            setRemoveAtmosphere(
+                self,
+                value
+            )
         end
     })
 
@@ -1832,12 +2124,22 @@ function Visuals:Init(context)
         CurrentValue = false,
         Flag = "DeveloperV5PostEffects",
         Callback = function(value)
-            setRemovePostEffects(self, value)
+            setRemovePostEffects(
+                self,
+                value
+            )
         end
     })
 
-    createLightingControls(self, tab)
-    createObjectRadarControls(self, tab)
+    createLightingControls(
+        self,
+        tab
+    )
+
+    createObjectRadarControls(
+        self,
+        tab
+    )
 
     tab:CreateSection("鏡頭")
 
@@ -1846,7 +2148,10 @@ function Visuals:Init(context)
         CurrentValue = false,
         Flag = "DeveloperV5ZoomUnlock",
         Callback = function(value)
-            setZoomUnlock(self, value)
+            setZoomUnlock(
+                self,
+                value
+            )
         end
     })
 
@@ -1858,19 +2163,25 @@ function Visuals:Init(context)
             if value then
                 startFreeCam(self)
             else
-                stopFreeCam(self, true)
+                stopFreeCam(
+                    self,
+                    true
+                )
             end
         end
     })
 
     tab:CreateInput({
         Name = "視野角度",
-        CurrentValue = tostring(self.FOV),
-        PlaceholderText = "輸入視野角度（40～120）",
+        CurrentValue =
+            tostring(self.FOV),
+        PlaceholderText =
+            "輸入視野角度（40～120）",
         RemoveTextAfterFocusLost = false,
         Flag = "DeveloperV5FOV",
         Callback = function(value)
-            local number = tonumber(value)
+            local number =
+                tonumber(value)
 
             if not number then
                 return
@@ -1883,7 +2194,8 @@ function Visuals:Init(context)
                     120
                 )
 
-            local camera = getCamera()
+            local camera =
+                getCamera()
 
             if camera then
                 camera.FieldOfView =
@@ -1895,12 +2207,17 @@ function Visuals:Init(context)
     tab:CreateInput({
         Name = "最大縮放距離",
         CurrentValue =
-            tostring(self.ZoomMaxDistance),
-        PlaceholderText = "例如 10000",
+            tostring(
+                self.ZoomMaxDistance
+            ),
+        PlaceholderText =
+            "例如 10000",
         RemoveTextAfterFocusLost = false,
-        Flag = "DeveloperV5ZoomMaxDistance",
+        Flag =
+            "DeveloperV5ZoomMaxDistance",
         Callback = function(value)
-            local number = tonumber(value)
+            local number =
+                tonumber(value)
 
             if not number then
                 return
@@ -1913,8 +2230,8 @@ function Visuals:Init(context)
                     100000
                 )
 
-            if self.ZoomDistance >
-                self.ZoomMaxDistance
+            if self.ZoomDistance
+                > self.ZoomMaxDistance
             then
                 self.ZoomDistance =
                     self.ZoomMaxDistance
@@ -1930,9 +2247,11 @@ function Visuals:Init(context)
         Name = "滾輪縮放幅度",
         Range = {10, 1000},
         Increment = 10,
-        CurrentValue = self.ZoomStep,
+        CurrentValue =
+            self.ZoomStep,
         Suffix = " studs",
-        Flag = "DeveloperV5ZoomStep",
+        Flag =
+            "DeveloperV5ZoomStep",
         Callback = function(value)
             self.ZoomStep = value
         end
@@ -1941,9 +2260,13 @@ function Visuals:Init(context)
     tab:CreateButton({
         Name = "重設鏡頭",
         Callback = function()
-            stopFreeCam(self, true)
+            stopFreeCam(
+                self,
+                true
+            )
 
-            local camera = getCamera()
+            local camera =
+                getCamera()
 
             if camera then
                 camera.FieldOfView =
@@ -1967,8 +2290,11 @@ function Visuals:Init(context)
                 or 70
 
             if self.ZoomUnlock then
-                local root = getRoot()
-                local camera = getCamera()
+                local root =
+                    getRoot()
+
+                local camera =
+                    getCamera()
 
                 if root and camera then
                     local focusPosition =
@@ -1993,37 +2319,58 @@ function Visuals:Init(context)
         end
     })
 
-    self.Shared.StopFreeCam = function()
-        stopFreeCam(self, true)
-    end
-
-    self.Shared.SetFreeCam = function(value)
-        if value then
-            startFreeCam(self)
-        else
-            stopFreeCam(self, true)
+    self.Shared.StopFreeCam =
+        function()
+            stopFreeCam(
+                self,
+                true
+            )
         end
-    end
 
-    self.Shared.SetZoomUnlock = function(value)
-        setZoomUnlock(self, value)
-    end
-
-    self.Shared.SetObjectRadar = function(value)
-        setObjectRadar(self, value)
-    end
-
-    self.Shared.RefreshObjectRadar = function()
-        if self.ObjectRadar then
-            task.spawn(function()
-                buildObjectRadar(self)
-            end)
+    self.Shared.SetFreeCam =
+        function(value)
+            if value then
+                startFreeCam(self)
+            else
+                stopFreeCam(
+                    self,
+                    true
+                )
+            end
         end
-    end
 
-    self.Shared.SetLightingStudio = function(value)
-        setLightingStudio(self, value)
-    end
+    self.Shared.SetZoomUnlock =
+        function(value)
+            setZoomUnlock(
+                self,
+                value
+            )
+        end
+
+    self.Shared.SetObjectRadar =
+        function(value)
+            setObjectRadar(
+                self,
+                value
+            )
+        end
+
+    self.Shared.RefreshObjectRadar =
+        function()
+            if self.ObjectRadar then
+                task.spawn(function()
+                    buildObjectRadar(self)
+                end)
+            end
+        end
+
+    self.Shared.SetLightingStudio =
+        function(value)
+            setLightingStudio(
+                self,
+                value
+            )
+        end
 end
 
 function Visuals:Cleanup()
@@ -2033,15 +2380,30 @@ function Visuals:Cleanup()
 
     self.Alive = false
 
-    stopFreeCam(self, true)
+    stopFreeCam(
+        self,
+        true
+    )
+
     stopAtmosphereWatcher(self)
     stopPostEffectWatcher(self)
     stopZoomWatcher(self)
     stopObjectRadar(self)
 
-    setFullbright(self, false)
-    setRemoveAtmosphere(self, false)
-    setRemovePostEffects(self, false)
+    setFullbright(
+        self,
+        false
+    )
+
+    setRemoveAtmosphere(
+        self,
+        false
+    )
+
+    setRemovePostEffects(
+        self,
+        false
+    )
 
     self.LightingStudio = false
 
@@ -2062,9 +2424,12 @@ function Visuals:Cleanup()
 
     setMouseNormal()
 
-    local camera = getCamera()
+    local camera =
+        getCamera()
 
-    if camera and self.OriginalFOV then
+    if camera
+        and self.OriginalFOV
+    then
         camera.FieldOfView =
             self.OriginalFOV
 
@@ -2083,14 +2448,23 @@ function Visuals:Cleanup()
     clearObjectRadar(self)
 
     for i = #self.Connections, 1, -1 do
-        disconnect(self.Connections[i])
+        disconnect(
+            self.Connections[i]
+        )
+
         self.Connections[i] = nil
     end
 
     table.clear(Keys)
-    table.clear(self.AtmosphereBackup)
-    table.clear(self.PostEffectsBackup)
-    table.clear(self.ObjectRadarCache)
+    table.clear(
+        self.AtmosphereBackup
+    )
+    table.clear(
+        self.PostEffectsBackup
+    )
+    table.clear(
+        self.ObjectRadarCache
+    )
 
     self.OriginalLighting = nil
     self.OriginalFOV = nil
