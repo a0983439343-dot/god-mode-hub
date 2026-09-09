@@ -24,6 +24,7 @@ local Visuals = {
     FreeCamRenderConnection = nil,
     AtmosphereConnection = nil,
     PostEffectConnection = nil,
+    ZoomConnection = nil,
     Shared = nil,
     Alive = false,
 }
@@ -147,13 +148,29 @@ local function setRemoveAtmosphere(self, enabled)
         return
     end
 
-    for _, item in ipairs(Lighting:GetDescendants()) do
-        disableAtmosphereItem(self, item)
-    end
+    task.spawn(function()
+        local descendants = Lighting:GetDescendants()
+
+        for i = 1, #descendants do
+            if not self.Alive or not self.RemoveAtmosphere then
+                return
+            end
+
+            disableAtmosphereItem(self, descendants[i])
+
+            if i % 100 == 0 then
+                task.wait()
+            end
+        end
+    end)
 
     self.AtmosphereConnection = Lighting.DescendantAdded:Connect(function(item)
         if self.Alive and self.RemoveAtmosphere then
-            disableAtmosphereItem(self, item)
+            task.defer(function()
+                if self.Alive and self.RemoveAtmosphere then
+                    disableAtmosphereItem(self, item)
+                end
+            end)
         end
     end)
 end
@@ -205,13 +222,29 @@ local function setRemovePostEffects(self, enabled)
         return
     end
 
-    for _, item in ipairs(Lighting:GetDescendants()) do
-        disablePostEffectItem(self, item)
-    end
+    task.spawn(function()
+        local descendants = Lighting:GetDescendants()
+
+        for i = 1, #descendants do
+            if not self.Alive or not self.RemovePostEffects then
+                return
+            end
+
+            disablePostEffectItem(self, descendants[i])
+
+            if i % 100 == 0 then
+                task.wait()
+            end
+        end
+    end)
 
     self.PostEffectConnection = Lighting.DescendantAdded:Connect(function(item)
         if self.Alive and self.RemovePostEffects then
-            disablePostEffectItem(self, item)
+            task.defer(function()
+                if self.Alive and self.RemovePostEffects then
+                    disablePostEffectItem(self, item)
+                end
+            end)
         end
     end)
 end
@@ -225,15 +258,54 @@ local function backupZoom(self)
     self.OriginalCameraMaxZoomDistance = Player.CameraMaxZoomDistance
 end
 
+local function stopZoomWatcher(self)
+    disconnect(self.ZoomConnection)
+    self.ZoomConnection = nil
+end
+
+local function enforceZoom(self)
+    if not self.ZoomUnlock or not self.Alive then
+        return
+    end
+
+    pcall(function()
+        Player.CameraMinZoomDistance = 0.5
+        Player.CameraMaxZoomDistance = math.max(
+            self.ZoomMaxDistance,
+            0.5
+        )
+    end)
+end
+
+local function startZoomWatcher(self)
+    stopZoomWatcher(self)
+
+    self.ZoomConnection = RunService.Heartbeat:Connect(function()
+        if not self.Alive or not self.ZoomUnlock then
+            return
+        end
+
+        enforceZoom(self)
+    end)
+end
+
 local function setZoomUnlock(self, enabled)
     backupZoom(self)
     self.ZoomUnlock = enabled
 
     if enabled then
         pcall(function()
-            Player.CameraMaxZoomDistance = math.max(self.ZoomMaxDistance, Player.CameraMinZoomDistance)
+            Player.CameraMinZoomDistance = 0.5
+            Player.CameraMaxZoomDistance = math.max(
+                self.ZoomMaxDistance,
+                0.5
+            )
         end)
+
+        startZoomWatcher(self)
     else
+        stopZoomWatcher(self)
+
         pcall(function()
             Player.CameraMinZoomDistance = self.OriginalCameraMinZoomDistance
             Player.CameraMaxZoomDistance = self.OriginalCameraMaxZoomDistance
@@ -244,16 +316,24 @@ end
 local function stopFreeCamConnections(self)
     disconnect(self.FreeCamInputConnection)
     disconnect(self.FreeCamRenderConnection)
+
     self.FreeCamInputConnection = nil
     self.FreeCamRenderConnection = nil
 end
 
 local function rotationCFrame(self)
-    return CFrame.fromOrientation(self.FreeCamPitch, self.FreeCamYaw, 0)
+    return CFrame.fromOrientation(
+        self.FreeCamPitch,
+        self.FreeCamYaw,
+        0
+    )
 end
 
 local function restoreFreeCamCharacter(self)
-    local humanoid = self.FreeCamHumanoidBackup and self.FreeCamHumanoidBackup.Humanoid
+    local humanoid =
+        self.FreeCamHumanoidBackup
+        and self.FreeCamHumanoidBackup.Humanoid
+
     local backup = self.FreeCamHumanoidBackup
 
     if humanoid and humanoid.Parent and backup then
@@ -271,9 +351,25 @@ local function restoreFreeCamCharacter(self)
     self.FreeCamCharacterCFrame = nil
 end
 
+local function restoreMouse()
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
+end
+
+local function lockMouse()
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+    end)
+end
+
 local function stopFreeCam(self, notifyShared)
     self.FreeCam = false
+
     stopFreeCamConnections(self)
+    restoreMouse()
 
     local camera = getCamera()
     local backup = self.FreeCamBackup
@@ -288,7 +384,9 @@ local function stopFreeCam(self, notifyShared)
                 if backup.CameraSubject and backup.CameraSubject.Parent then
                     camera.CameraSubject = backup.CameraSubject
                 else
-                    local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+                    local humanoid =
+                        Player.Character
+                        and Player.Character:FindFirstChildOfClass("Humanoid")
 
                     if humanoid then
                         camera.CameraSubject = humanoid
@@ -296,17 +394,24 @@ local function stopFreeCam(self, notifyShared)
                 end
             end)
         else
-            camera.CameraType = Enum.CameraType.Custom
+            pcall(function()
+                camera.CameraType = Enum.CameraType.Custom
+            end)
 
-            local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+            local humanoid =
+                Player.Character
+                and Player.Character:FindFirstChildOfClass("Humanoid")
 
             if humanoid then
-                camera.CameraSubject = humanoid
+                pcall(function()
+                    camera.CameraSubject = humanoid
+                end)
             end
         end
     end
 
     restoreFreeCamCharacter(self)
+
     self.FreeCamBackup = nil
     self.FreeCamPosition = nil
 
@@ -316,7 +421,10 @@ local function stopFreeCam(self, notifyShared)
 end
 
 local function startFreeCam(self)
-    if self.Shared and self.Shared.FlightActive and self.Shared.StopFlight then
+    if self.Shared
+        and self.Shared.FlightActive
+        and self.Shared.StopFlight
+    then
         pcall(self.Shared.StopFlight)
     end
 
@@ -343,8 +451,13 @@ local function startFreeCam(self)
     }
 
     local character = Player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character
+        and character:FindFirstChild("HumanoidRootPart")
 
     if humanoid and root and humanoid.Health > 0 then
         self.FreeCamCharacter = character
@@ -381,95 +494,131 @@ local function startFreeCam(self)
 
     self.FreeCamYaw = ry
     self.FreeCamPosition = camera.CFrame.Position
+
     camera.CameraType = Enum.CameraType.Scriptable
 
-    self.FreeCamInputConnection = UserInputService.InputChanged:Connect(function(input)
-        if not self.FreeCam then
-            return
-        end
+    lockMouse()
 
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            self.FreeCamYaw -= input.Delta.X * 0.0025
-            self.FreeCamPitch = math.clamp(
-                self.FreeCamPitch - input.Delta.Y * 0.0025,
-                math.rad(-89),
-                math.rad(89)
-            )
-        elseif input.UserInputType == Enum.UserInputType.Touch then
-            self.FreeCamYaw -= input.Delta.X * 0.004
-            self.FreeCamPitch = math.clamp(
-                self.FreeCamPitch - input.Delta.Y * 0.004,
-                math.rad(-89),
-                math.rad(89)
-            )
-        end
-    end)
-
-    self.FreeCamRenderConnection = RunService.RenderStepped:Connect(function(dt)
-        if not self.Alive or not self.FreeCam then
-            return
-        end
-
-        local currentCamera = getCamera()
-
-        if not currentCamera then
-            return
-        end
-
-        local lockedCharacter = self.FreeCamCharacter
-        local lockedRoot = lockedCharacter and lockedCharacter:FindFirstChild("HumanoidRootPart")
-        local lockedHumanoid = lockedCharacter and lockedCharacter:FindFirstChildOfClass("Humanoid")
-
-        if lockedRoot and self.FreeCamCharacterCFrame then
-            pcall(function()
-                lockedRoot.CFrame = self.FreeCamCharacterCFrame
-                lockedRoot.AssemblyLinearVelocity = Vector3.zero
-                lockedRoot.AssemblyAngularVelocity = Vector3.zero
-            end)
-
-            if lockedHumanoid and lockedHumanoid.Health > 0 then
-                lockedHumanoid:Move(Vector3.zero, false)
+    self.FreeCamInputConnection =
+        UserInputService.InputChanged:Connect(function(input)
+            if not self.Alive or not self.FreeCam then
+                return
             end
-        end
 
-        local rotation = rotationCFrame(self)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                self.FreeCamYaw -= input.Delta.X * 0.0025
 
-        local forward =
-            (Keys.W and 1 or 0)
-            + (Keys.S and -1 or 0)
+                self.FreeCamPitch = math.clamp(
+                    self.FreeCamPitch
+                        - input.Delta.Y * 0.0025,
+                    math.rad(-89),
+                    math.rad(89)
+                )
+            elseif input.UserInputType == Enum.UserInputType.Touch then
+                self.FreeCamYaw -= input.Delta.X * 0.004
 
-        local side =
-            (Keys.D and 1 or 0)
-            + (Keys.A and -1 or 0)
+                self.FreeCamPitch = math.clamp(
+                    self.FreeCamPitch
+                        - input.Delta.Y * 0.004,
+                    math.rad(-89),
+                    math.rad(89)
+                )
+            end
+        end)
 
-        local vertical = Keys.Space and 1 or 0
+    self.FreeCamRenderConnection =
+        RunService.RenderStepped:Connect(function(dt)
+            if not self.Alive or not self.FreeCam then
+                return
+            end
 
-        if Keys.LeftControl or Keys.RightControl then
-            vertical -= 1
-        end
+            local currentCamera = getCamera()
 
-        local move =
-            rotation.LookVector * forward
-            + rotation.RightVector * side
-            + Vector3.yAxis * vertical
+            if not currentCamera then
+                return
+            end
 
-        if move.Magnitude > 1 then
-            move = move.Unit
-        end
+            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+                lockMouse()
+            end
 
-        local speed =
-            (Keys.LeftShift or Keys.RightShift)
-            and 180
-            or 70
+            local lockedCharacter = self.FreeCamCharacter
 
-        self.FreeCamPosition += move * speed * dt
+            local lockedRoot =
+                lockedCharacter
+                and lockedCharacter:FindFirstChild("HumanoidRootPart")
 
-        currentCamera.CFrame =
-            CFrame.new(self.FreeCamPosition)
-            * rotation
+            local lockedHumanoid =
+                lockedCharacter
+                and lockedCharacter:FindFirstChildOfClass("Humanoid")
 
-        currentCamera.CameraType = Enum.CameraType.Scriptable
-    end)
+            if lockedRoot and self.FreeCamCharacterCFrame then
+                pcall(function()
+                    lockedRoot.CFrame =
+                        self.FreeCamCharacterCFrame
+
+                    lockedRoot.AssemblyLinearVelocity =
+                        Vector3.zero
+
+                    lockedRoot.AssemblyAngularVelocity =
+                        Vector3.zero
+                end)
+
+                if lockedHumanoid
+                    and lockedHumanoid.Health > 0
+                then
+                    lockedHumanoid:Move(
+                        Vector3.zero,
+                        false
+                    )
+                end
+            end
+
+            local rotation = rotationCFrame(self)
+
+            local forward =
+                (Keys.W and 1 or 0)
+                + (Keys.S and -1 or 0)
+
+            local side =
+                (Keys.D and 1 or 0)
+                + (Keys.A and -1 or 0)
+
+            local vertical =
+                Keys.Space
+                and 1
+                or 0
+
+            if Keys.LeftControl
+                or Keys.RightControl
+            then
+                vertical -= 1
+            end
+
+            local move =
+                rotation.LookVector * forward
+                + rotation.RightVector * side
+                + Vector3.yAxis * vertical
+
+            if move.Magnitude > 1 then
+                move = move.Unit
+            end
+
+            local speed =
+                (Keys.LeftShift or Keys.RightShift)
+                and 180
+                or 70
+
+            self.FreeCamPosition +=
+                move * speed * dt
+
+            currentCamera.CFrame =
+                CFrame.new(self.FreeCamPosition)
+                * rotation
+
+            currentCamera.CameraType =
+                Enum.CameraType.Scriptable
+        end)
 end
 
 function Visuals:Init(context)
@@ -486,12 +635,23 @@ function Visuals:Init(context)
             if self.FreeCam then
                 stopFreeCam(self, true)
             end
+
+            if self.ZoomUnlock then
+                task.defer(function()
+                    if self.Alive and self.ZoomUnlock then
+                        enforceZoom(self)
+                    end
+                end)
+            end
         end)
     )
 
     addConnection(
         self,
-        UserInputService.InputBegan:Connect(function(input, processed)
+        UserInputService.InputBegan:Connect(function(
+            input,
+            processed
+        )
             if processed or not self.Alive then
                 return
             end
@@ -579,7 +739,11 @@ function Visuals:Init(context)
                 return
             end
 
-            self.FOV = math.clamp(number, 40, 120)
+            self.FOV = math.clamp(
+                number,
+                40,
+                120
+            )
 
             local camera = getCamera()
 
@@ -597,8 +761,12 @@ function Visuals:Init(context)
             local camera = getCamera()
 
             if camera then
-                camera.FieldOfView = self.OriginalFOV or 70
-                camera.CameraType = Enum.CameraType.Custom
+                camera.FieldOfView =
+                    self.OriginalFOV
+                    or 70
+
+                camera.CameraType =
+                    Enum.CameraType.Custom
 
                 local humanoid =
                     Player.Character
@@ -609,12 +777,28 @@ function Visuals:Init(context)
                 end
             end
 
-            self.FOV = self.OriginalFOV or 70
+            self.FOV =
+                self.OriginalFOV
+                or 70
+
+            restoreMouse()
         end,
     })
 
     self.Shared.StopFreeCam = function()
         stopFreeCam(self, true)
+    end
+
+    self.Shared.SetFreeCam = function(value)
+        if value then
+            startFreeCam(self)
+        else
+            stopFreeCam(self, true)
+        end
+    end
+
+    self.Shared.SetZoomUnlock = function(value)
+        setZoomUnlock(self, value)
     end
 end
 
@@ -628,11 +812,14 @@ function Visuals:Cleanup()
     stopFreeCam(self, true)
     stopAtmosphereWatcher(self)
     stopPostEffectWatcher(self)
+    stopZoomWatcher(self)
 
     setFullbright(self, false)
     setRemoveAtmosphere(self, false)
     setRemovePostEffects(self, false)
     setZoomUnlock(self, false)
+
+    restoreMouse()
 
     local camera = getCamera()
 
@@ -646,7 +833,6 @@ function Visuals:Cleanup()
     end
 
     table.clear(Keys)
-
     table.clear(self.AtmosphereBackup)
     table.clear(self.PostEffectsBackup)
 
@@ -656,10 +842,13 @@ function Visuals:Cleanup()
     self.OriginalCameraMaxZoomDistance = nil
     self.FreeCamBackup = nil
     self.FreeCamPosition = nil
+    self.ZoomConnection = nil
 
     if self.Shared then
         self.Shared.FreeCamActive = false
         self.Shared.StopFreeCam = nil
+        self.Shared.SetFreeCam = nil
+        self.Shared.SetZoomUnlock = nil
     end
 end
 
