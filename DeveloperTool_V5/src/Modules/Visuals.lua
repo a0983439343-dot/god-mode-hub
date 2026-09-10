@@ -12,13 +12,15 @@ local Visuals = {
     OriginalCameraMode = nil,
     ZoomUnlock = false,
     ZoomMaxDistance = 10000,
+    ZoomMinDistance = 0.5,
     ZoomDistance = 12,
-    ZoomStep = 100,
+    ZoomStep = 60,
     OriginalZoomDistance = nil,
     ZoomConnection = nil,
     ZoomPropertyConnection1 = nil,
     ZoomPropertyConnection2 = nil,
     ZoomRenderConnection = nil,
+    ZoomActionBound = false,
     FreeCamCharacter = nil,
     FreeCamCharacterCFrame = nil,
     FreeCamHumanoidBackup = nil,
@@ -48,15 +50,16 @@ local Visuals = {
     RealisticLighting = false,
     RealisticLightingBackup = nil,
     RealisticAtmosphere = nil,
+    RealisticColorCorrection = nil,
     RealisticBloom = nil,
-    RealisticColor = nil,
     RealisticSunRays = nil,
-    OriginalMouseBehavior = Enum.MouseBehavior.Default
+    RealisticDepthOfField = nil,
 }
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
@@ -76,7 +79,6 @@ local function addConnection(self, connection)
     if connection then
         table.insert(self.Connections, connection)
     end
-
     return connection
 end
 
@@ -108,34 +110,6 @@ local function getRoot()
     return character:FindFirstChild("HumanoidRootPart")
 end
 
-local function isMouseOverGui()
-    local mousePosition =
-        UserInputService:GetMouseLocation()
-
-    local ok, objects =
-        pcall(function()
-            return GuiService:GetGuiObjectsAtPosition(
-                mousePosition.X,
-                mousePosition.Y
-            )
-        end)
-
-    if not ok or not objects then
-        return false
-    end
-
-    for _, object in ipairs(objects) do
-        if object
-            and object:IsA("GuiObject")
-            and object.Visible
-        then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function backupFOV(self)
     if self.OriginalFOV ~= nil then
         return
@@ -143,9 +117,7 @@ local function backupFOV(self)
 
     local camera = getCamera()
 
-    self.OriginalFOV =
-        camera and camera.FieldOfView or 70
-
+    self.OriginalFOV = camera and camera.FieldOfView or 70
     self.FOV = self.OriginalFOV
 end
 
@@ -159,11 +131,14 @@ local function backupLighting(self)
         ClockTime = Lighting.ClockTime,
         FogEnd = Lighting.FogEnd,
         GlobalShadows = Lighting.GlobalShadows,
-        ExposureCompensation =
-            Lighting.ExposureCompensation,
+        ExposureCompensation = Lighting.ExposureCompensation,
         Ambient = Lighting.Ambient,
-        OutdoorAmbient =
-            Lighting.OutdoorAmbient
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        ColorShift_Top = Lighting.ColorShift_Top,
+        ColorShift_Bottom = Lighting.ColorShift_Bottom,
+        EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+        ShadowSoftness = Lighting.ShadowSoftness,
     }
 end
 
@@ -185,6 +160,10 @@ local function setFullbright(self, enabled)
     end
 
     self.Fullbright = false
+
+    if self.RealisticLighting then
+        return
+    end
 
     if self.OriginalLighting then
         pcall(function()
@@ -208,6 +187,21 @@ local function setFullbright(self, enabled)
 
             Lighting.OutdoorAmbient =
                 self.OriginalLighting.OutdoorAmbient
+
+            Lighting.ColorShift_Top =
+                self.OriginalLighting.ColorShift_Top
+
+            Lighting.ColorShift_Bottom =
+                self.OriginalLighting.ColorShift_Bottom
+
+            Lighting.EnvironmentDiffuseScale =
+                self.OriginalLighting.EnvironmentDiffuseScale
+
+            Lighting.EnvironmentSpecularScale =
+                self.OriginalLighting.EnvironmentSpecularScale
+
+            Lighting.ShadowSoftness =
+                self.OriginalLighting.ShadowSoftness
         end)
     end
 end
@@ -218,8 +212,7 @@ local function disableAtmosphereItem(self, item)
     end
 
     if self.AtmosphereBackup[item] == nil then
-        self.AtmosphereBackup[item] =
-            item.Parent
+        self.AtmosphereBackup[item] = item.Parent
     end
 
     pcall(function()
@@ -228,9 +221,7 @@ local function disableAtmosphereItem(self, item)
 end
 
 local function restoreAtmosphere(self)
-    for item, originalParent
-        in pairs(self.AtmosphereBackup)
-    do
+    for item, originalParent in pairs(self.AtmosphereBackup) do
         if item and originalParent then
             pcall(function()
                 item.Parent = originalParent
@@ -256,20 +247,14 @@ local function setRemoveAtmosphere(self, enabled)
     end
 
     task.spawn(function()
-        local descendants =
-            Lighting:GetDescendants()
+        local descendants = Lighting:GetDescendants()
 
         for i = 1, #descendants do
-            if not self.Alive
-                or not self.RemoveAtmosphere
-            then
+            if not self.Alive or not self.RemoveAtmosphere then
                 return
             end
 
-            disableAtmosphereItem(
-                self,
-                descendants[i]
-            )
+            disableAtmosphereItem(self, descendants[i])
 
             if i % 100 == 0 then
                 task.wait()
@@ -278,24 +263,15 @@ local function setRemoveAtmosphere(self, enabled)
     end)
 
     self.AtmosphereConnection =
-        Lighting.DescendantAdded:Connect(
-            function(item)
-                if self.Alive
-                    and self.RemoveAtmosphere
-                then
-                    task.defer(function()
-                        if self.Alive
-                            and self.RemoveAtmosphere
-                        then
-                            disableAtmosphereItem(
-                                self,
-                                item
-                            )
-                        end
-                    end)
-                end
+        Lighting.DescendantAdded:Connect(function(item)
+            if self.Alive and self.RemoveAtmosphere then
+                task.defer(function()
+                    if self.Alive and self.RemoveAtmosphere then
+                        disableAtmosphereItem(self, item)
+                    end
+                end)
             end
-        )
+        end)
 end
 
 local function isPostEffect(item)
@@ -313,8 +289,7 @@ local function disablePostEffectItem(self, item)
     end
 
     if self.PostEffectsBackup[item] == nil then
-        self.PostEffectsBackup[item] =
-            item.Enabled
+        self.PostEffectsBackup[item] = item.Enabled
     end
 
     pcall(function()
@@ -323,9 +298,7 @@ local function disablePostEffectItem(self, item)
 end
 
 local function restorePostEffects(self)
-    for item, original
-        in pairs(self.PostEffectsBackup)
-    do
+    for item, original in pairs(self.PostEffectsBackup) do
         if item and item.Parent then
             pcall(function()
                 item.Enabled = original
@@ -351,20 +324,14 @@ local function setRemovePostEffects(self, enabled)
     end
 
     task.spawn(function()
-        local descendants =
-            Lighting:GetDescendants()
+        local descendants = Lighting:GetDescendants()
 
         for i = 1, #descendants do
-            if not self.Alive
-                or not self.RemovePostEffects
-            then
+            if not self.Alive or not self.RemovePostEffects then
                 return
             end
 
-            disablePostEffectItem(
-                self,
-                descendants[i]
-            )
+            disablePostEffectItem(self, descendants[i])
 
             if i % 100 == 0 then
                 task.wait()
@@ -373,24 +340,15 @@ local function setRemovePostEffects(self, enabled)
     end)
 
     self.PostEffectConnection =
-        Lighting.DescendantAdded:Connect(
-            function(item)
-                if self.Alive
-                    and self.RemovePostEffects
-                then
-                    task.defer(function()
-                        if self.Alive
-                            and self.RemovePostEffects
-                        then
-                            disablePostEffectItem(
-                                self,
-                                item
-                            )
-                        end
-                    end)
-                end
+        Lighting.DescendantAdded:Connect(function(item)
+            if self.Alive and self.RemovePostEffects then
+                task.defer(function()
+                    if self.Alive and self.RemovePostEffects then
+                        disablePostEffectItem(self, item)
+                    end
+                end)
             end
-        )
+        end)
 end
 
 local function backupZoom(self)
@@ -411,16 +369,10 @@ local function backupZoom(self)
     local root = getRoot()
 
     if camera and root then
-        local focusPosition =
-            root.Position + Vector3.new(0, 2, 0)
-
         self.ZoomDistance =
             math.clamp(
-                (
-                    camera.CFrame.Position
-                    - focusPosition
-                ).Magnitude,
-                0.5,
+                (camera.CFrame.Position - root.Position).Magnitude,
+                self.ZoomMinDistance,
                 self.ZoomMaxDistance
             )
     end
@@ -429,16 +381,53 @@ local function backupZoom(self)
         self.ZoomDistance
 end
 
+local function getMousePosition()
+    local position =
+        UserInputService:GetMouseLocation()
+
+    return position.X, position.Y
+end
+
+local function isMouseOverGui()
+    local x, y = getMousePosition()
+
+    local objects = {}
+
+    pcall(function()
+        objects =
+            GuiService:GetGuiObjectsAtPosition(
+                x,
+                y
+            )
+    end)
+
+    for _, object in ipairs(objects) do
+        if object
+            and object:IsA("GuiObject")
+            and object.Visible
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function stopZoomWatcher(self)
     disconnect(self.ZoomConnection)
     disconnect(self.ZoomPropertyConnection1)
     disconnect(self.ZoomPropertyConnection2)
+    disconnect(self.ZoomRenderConnection)
 
-    pcall(function()
-        RunService:UnbindFromRenderStep(
-            "DeveloperV5_CustomZoom"
-        )
-    end)
+    if self.ZoomActionBound then
+        pcall(function()
+            ContextActionService:UnbindAction(
+                "DeveloperV5ZoomWheel"
+            )
+        end)
+
+        self.ZoomActionBound = false
+    end
 
     self.ZoomConnection = nil
     self.ZoomPropertyConnection1 = nil
@@ -446,123 +435,80 @@ local function stopZoomWatcher(self)
     self.ZoomRenderConnection = nil
 end
 
-local function enforceZoomLimit(self)
-    if not self.Alive
-        or not self.ZoomUnlock
-    then
-        return
-    end
-
-    pcall(function()
-        if Player.CameraMinZoomDistance ~= 0.5 then
-            Player.CameraMinZoomDistance = 0.5
-        end
-
-        if Player.CameraMaxZoomDistance
-            ~= self.ZoomMaxDistance
-        then
-            Player.CameraMaxZoomDistance =
-                self.ZoomMaxDistance
-        end
-
-        if Player.CameraMode
-            ~= Enum.CameraMode.Classic
-        then
-            Player.CameraMode =
-                Enum.CameraMode.Classic
-        end
-    end)
-end
-
-local function customZoomRender(self)
-    if not self.Alive
-        or not self.ZoomUnlock
-        or self.FreeCam
-    then
-        return
-    end
-
-    local camera = getCamera()
-    local root = getRoot()
-
-    if not camera or not root then
-        return
-    end
-
-    if camera.CameraType
-        == Enum.CameraType.Scriptable
-    then
-        return
-    end
-
-    local focusPosition =
-        root.Position + Vector3.new(0, 2, 0)
-
-    local direction =
-        camera.CFrame.LookVector
-
-    if direction.Magnitude <= 0 then
-        return
-    end
-
-    local targetPosition =
-        focusPosition
-        - direction.Unit * self.ZoomDistance
-
-    local targetCFrame =
-        CFrame.lookAt(
-            targetPosition,
-            focusPosition
+local function setZoomDistance(self, distance)
+    self.ZoomDistance =
+        math.clamp(
+            distance,
+            self.ZoomMinDistance,
+            self.ZoomMaxDistance
         )
 
     pcall(function()
-        camera.CFrame = targetCFrame
+        Player.CameraMinZoomDistance =
+            self.ZoomDistance
+
+        Player.CameraMaxZoomDistance =
+            self.ZoomDistance
     end)
 end
 
-local function applyZoomStep(self, direction)
+local function enforceZoomLimit(self)
+    if not self.Alive or not self.ZoomUnlock then
+        return
+    end
+
+    pcall(function()
+        Player.CameraMode =
+            Enum.CameraMode.Classic
+
+        Player.CameraMinZoomDistance =
+            self.ZoomDistance
+
+        Player.CameraMaxZoomDistance =
+            self.ZoomDistance
+    end)
+end
+
+local function zoomAction(self, actionName, inputState, inputObject)
     if not self.Alive
         or not self.ZoomUnlock
-        or self.FreeCam
     then
-        return
+        return Enum.ContextActionResult.Pass
+    end
+
+    if inputObject.UserInputType
+        ~= Enum.UserInputType.MouseWheel
+    then
+        return Enum.ContextActionResult.Pass
+    end
+
+    if inputState
+        ~= Enum.UserInputState.Change
+    then
+        return Enum.ContextActionResult.Sink
     end
 
     if isMouseOverGui() then
-        return
+        return Enum.ContextActionResult.Sink
     end
 
-    local camera = getCamera()
-    local root = getRoot()
+    local delta =
+        inputObject.Position.Z
 
-    if not camera or not root then
-        return
+    if delta == 0 then
+        return Enum.ContextActionResult.Sink
     end
 
-    local focusPosition =
-        root.Position + Vector3.new(0, 2, 0)
+    local nextDistance =
+        self.ZoomDistance
+        - delta * self.ZoomStep
 
-    local currentDistance =
-        (
-            camera.CFrame.Position
-            - focusPosition
-        ).Magnitude
+    setZoomDistance(
+        self,
+        nextDistance
+    )
 
-    if currentDistance > 0.5
-        and currentDistance
-            < self.ZoomMaxDistance + 1
-    then
-        self.ZoomDistance =
-            currentDistance
-    end
-
-    self.ZoomDistance =
-        math.clamp(
-            self.ZoomDistance
-                + direction * self.ZoomStep,
-            0.5,
-            self.ZoomMaxDistance
-        )
+    return Enum.ContextActionResult.Sink
 end
 
 local function setZoomUnlock(self, enabled)
@@ -580,10 +526,9 @@ local function setZoomUnlock(self, enabled)
             Player.CameraMaxZoomDistance =
                 self.OriginalCameraMaxZoomDistance
 
-            if self.OriginalCameraMode then
-                Player.CameraMode =
-                    self.OriginalCameraMode
-            end
+            Player.CameraMode =
+                self.OriginalCameraMode
+                or Enum.CameraMode.Classic
         end)
 
         return
@@ -593,33 +538,39 @@ local function setZoomUnlock(self, enabled)
     local root = getRoot()
 
     if camera and root then
-        local focusPosition =
-            root.Position + Vector3.new(0, 2, 0)
-
         self.ZoomDistance =
             math.clamp(
-                (
-                    camera.CFrame.Position
-                    - focusPosition
-                ).Magnitude,
-                0.5,
+                (camera.CFrame.Position - root.Position).Magnitude,
+                self.ZoomMinDistance,
                 self.ZoomMaxDistance
             )
     end
 
     enforceZoomLimit(self)
 
+    ContextActionService:BindActionAtPriority(
+        "DeveloperV5ZoomWheel",
+        function(actionName, inputState, inputObject)
+            return zoomAction(
+                self,
+                actionName,
+                inputState,
+                inputObject
+            )
+        end,
+        false,
+        3000,
+        Enum.UserInputType.MouseWheel
+    )
+
+    self.ZoomActionBound = true
+
     self.ZoomPropertyConnection1 =
         Player:GetPropertyChangedSignal(
             "CameraMinZoomDistance"
         ):Connect(function()
-            if self.Alive
-                and self.ZoomUnlock
-            then
-                pcall(function()
-                    Player.CameraMinZoomDistance =
-                        0.5
-                end)
+            if self.Alive and self.ZoomUnlock then
+                enforceZoomLimit(self)
             end
         end)
 
@@ -627,86 +578,80 @@ local function setZoomUnlock(self, enabled)
         Player:GetPropertyChangedSignal(
             "CameraMaxZoomDistance"
         ):Connect(function()
-            if self.Alive
-                and self.ZoomUnlock
-            then
-                pcall(function()
-                    Player.CameraMaxZoomDistance =
-                        self.ZoomMaxDistance
-                end)
+            if self.Alive and self.ZoomUnlock then
+                enforceZoomLimit(self)
             end
         end)
 
     self.ZoomConnection =
-        UserInputService.InputChanged:Connect(
-            function(input)
-                if not self.Alive
-                    or not self.ZoomUnlock
-                    or self.FreeCam
+        RunService.Heartbeat:Connect(function()
+            if self.Alive and self.ZoomUnlock then
+                if math.abs(
+                    Player.CameraMinZoomDistance
+                    - self.ZoomDistance
+                ) > 0.01
+                    or math.abs(
+                        Player.CameraMaxZoomDistance
+                        - self.ZoomDistance
+                    ) > 0.01
                 then
-                    return
-                end
-
-                if input.UserInputType
-                    ~= Enum.UserInputType.MouseWheel
-                then
-                    return
-                end
-
-                if isMouseOverGui() then
-                    return
-                end
-
-                local wheel =
-                    input.Position.Z
-
-                if wheel > 0 then
-                    applyZoomStep(
-                        self,
-                        -1
-                    )
-                elseif wheel < 0 then
-                    applyZoomStep(
-                        self,
-                        1
-                    )
+                    enforceZoomLimit(self)
                 end
             end
+        end)
+
+    self.ZoomRenderConnection =
+        RunService:BindToRenderStep(
+            "DeveloperV5ZoomRender",
+            Enum.RenderPriority.Camera.Value + 1,
+            function()
+                if not self.Alive
+                    or not self.ZoomUnlock
+                then
+                    return
+                end
+
+                local currentCamera =
+                    getCamera()
+
+                if not currentCamera then
+                    return
+                end
+
+                if currentCamera.CameraType
+                    == Enum.CameraType.Scriptable
+                then
+                    return
+                end
+
+                local focus =
+                    currentCamera.Focus.Position
+
+                local cameraCFrame =
+                    currentCamera.CFrame
+
+                local lookVector =
+                    cameraCFrame.LookVector
+
+                local newPosition =
+                    focus
+                    - lookVector * self.ZoomDistance
+
+                currentCamera.CFrame =
+                    CFrame.lookAt(
+                        newPosition,
+                        newPosition + lookVector,
+                        cameraCFrame.UpVector
+                    )
+            end
         )
-
-    pcall(function()
-        RunService:UnbindFromRenderStep(
-            "DeveloperV5_CustomZoom"
-        )
-    end)
-
-    RunService:BindToRenderStep(
-        "DeveloperV5_CustomZoom",
-        Enum.RenderPriority.Camera.Value + 1,
-        function()
-            customZoomRender(self)
-        end
-    )
-
-    self.ZoomRenderConnection = true
 end
 
 local function stopFreeCamConnections(self)
-    disconnect(
-        self.FreeCamInputConnection
-    )
-
-    disconnect(
-        self.FreeCamInputBeganConnection
-    )
-
-    disconnect(
-        self.FreeCamInputEndedConnection
-    )
-
-    disconnect(
-        self.FreeCamRenderConnection
-    )
+    disconnect(self.FreeCamInputConnection)
+    disconnect(self.FreeCamInputBeganConnection)
+    disconnect(self.FreeCamInputEndedConnection)
+    disconnect(self.FreeCamRenderConnection)
 
     self.FreeCamInputConnection = nil
     self.FreeCamInputBeganConnection = nil
@@ -723,11 +668,12 @@ local function rotationCFrame(self)
 end
 
 local function restoreFreeCamCharacter(self)
+    local humanoid =
+        self.FreeCamHumanoidBackup
+        and self.FreeCamHumanoidBackup.Humanoid
+
     local backup =
         self.FreeCamHumanoidBackup
-
-    local humanoid =
-        backup and backup.Humanoid
 
     if humanoid
         and humanoid.Parent
@@ -781,15 +727,7 @@ local function stopFreeCam(self, notifyShared)
     self.FreeCamRotating = false
 
     stopFreeCamConnections(self)
-
-    pcall(function()
-        UserInputService.MouseBehavior =
-            self.OriginalMouseBehavior
-    end)
-
-    pcall(function()
-        UserInputService.MouseIconEnabled = true
-    end)
+    setMouseNormal()
 
     local camera = getCamera()
     local backup = self.FreeCamBackup
@@ -854,9 +792,7 @@ local function startFreeCam(self)
         and self.Shared.FlightActive
         and self.Shared.StopFlight
     then
-        pcall(
-            self.Shared.StopFlight
-        )
+        pcall(self.Shared.StopFlight)
     end
 
     local camera = getCamera()
@@ -865,13 +801,8 @@ local function startFreeCam(self)
         return
     end
 
-    stopFreeCam(
-        self,
-        false
-    )
-
-    self.OriginalMouseBehavior =
-        UserInputService.MouseBehavior
+    stopFreeCam(self, false)
+    backupFOV(self)
 
     self.FreeCam = true
     self.FreeCamRotating = false
@@ -884,11 +815,10 @@ local function startFreeCam(self)
         CFrame = camera.CFrame,
         FieldOfView = camera.FieldOfView,
         CameraType = camera.CameraType,
-        CameraSubject = camera.CameraSubject
+        CameraSubject = camera.CameraSubject,
     }
 
-    local character =
-        Player.Character
+    local character = Player.Character
 
     local humanoid =
         character
@@ -917,10 +847,8 @@ local function startFreeCam(self)
             WalkSpeed = humanoid.WalkSpeed,
             JumpPower = humanoid.JumpPower,
             JumpHeight = humanoid.JumpHeight,
-            UseJumpPower =
-                humanoid.UseJumpPower,
-            AutoRotate =
-                humanoid.AutoRotate
+            UseJumpPower = humanoid.UseJumpPower,
+            AutoRotate = humanoid.AutoRotate,
         }
 
         humanoid.WalkSpeed = 0
@@ -932,11 +860,7 @@ local function startFreeCam(self)
         end
 
         humanoid.AutoRotate = false
-
-        humanoid:Move(
-            Vector3.zero,
-            false
-        )
+        humanoid:Move(Vector3.zero, false)
     end
 
     local rx, ry =
@@ -950,7 +874,6 @@ local function startFreeCam(self)
         )
 
     self.FreeCamYaw = ry
-
     self.FreeCamPosition =
         camera.CFrame.Position
 
@@ -968,8 +891,8 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType
-                    == Enum.UserInputType.MouseButton2
+                if input.UserInputType ==
+                    Enum.UserInputType.MouseButton2
                 then
                     self.FreeCamRotating = true
                     setMouseRotate()
@@ -980,12 +903,11 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType
-                    == Enum.UserInputType.Keyboard
+                if input.UserInputType ==
+                    Enum.UserInputType.Keyboard
                 then
-                    Keys[
-                        input.KeyCode.Name
-                    ] = true
+                    Keys[input.KeyCode.Name] =
+                        true
                 end
             end
         )
@@ -993,20 +915,19 @@ local function startFreeCam(self)
     self.FreeCamInputEndedConnection =
         UserInputService.InputEnded:Connect(
             function(input)
-                if input.UserInputType
-                    == Enum.UserInputType.MouseButton2
+                if input.UserInputType ==
+                    Enum.UserInputType.MouseButton2
                 then
                     self.FreeCamRotating = false
                     setMouseNormal()
                     return
                 end
 
-                if input.UserInputType
-                    == Enum.UserInputType.Keyboard
+                if input.UserInputType ==
+                    Enum.UserInputType.Keyboard
                 then
-                    Keys[
-                        input.KeyCode.Name
-                    ] = false
+                    Keys[input.KeyCode.Name] =
+                        false
                 end
             end
         )
@@ -1021,8 +942,8 @@ local function startFreeCam(self)
                     return
                 end
 
-                if input.UserInputType
-                    == Enum.UserInputType.MouseMovement
+                if input.UserInputType ==
+                    Enum.UserInputType.MouseMovement
                 then
                     self.FreeCamYaw -=
                         input.Delta.X * 0.0025
@@ -1114,22 +1035,17 @@ local function startFreeCam(self)
                 end
 
                 local move =
-                    rotation.LookVector
-                    * forward
-                    + rotation.RightVector
-                    * side
-                    + Vector3.yAxis
-                    * vertical
+                    rotation.LookVector * forward
+                    + rotation.RightVector * side
+                    + Vector3.yAxis * vertical
 
                 if move.Magnitude > 1 then
                     move = move.Unit
                 end
 
                 local speed =
-                    (
-                        Keys.LeftShift
-                        or Keys.RightShift
-                    )
+                    (Keys.LeftShift
+                        or Keys.RightShift)
                     and 180
                     or 70
 
@@ -1161,31 +1077,20 @@ local function startFreeCam(self)
         )
 end
 
-local function objectRadarClassMatch(
-    self,
-    object
-)
-    if self.ObjectRadarMode ==
-        "全部物件"
-    then
+local function objectRadarClassMatch(self, object)
+    if self.ObjectRadarMode == "全部物件" then
         return true
     end
 
-    if self.ObjectRadarMode ==
-        "模型"
-    then
+    if self.ObjectRadarMode == "模型" then
         return object:IsA("Model")
     end
 
-    if self.ObjectRadarMode ==
-        "零件"
-    then
+    if self.ObjectRadarMode == "零件" then
         return object:IsA("BasePart")
     end
 
-    if self.ObjectRadarMode ==
-        "NPC"
-    then
+    if self.ObjectRadarMode == "NPC" then
         return object:IsA("Model")
             and object:FindFirstChildOfClass(
                 "Humanoid"
@@ -1195,18 +1100,13 @@ local function objectRadarClassMatch(
             )
     end
 
-    if self.ObjectRadarMode ==
-        "工具"
-    then
+    if self.ObjectRadarMode == "工具" then
         return object:IsA("Tool")
     end
 
-    if self.ObjectRadarMode ==
-        "互動物件"
-    then
+    if self.ObjectRadarMode == "互動物件" then
         return object:IsA("ProximityPrompt")
             or object:IsA("ClickDetector")
-            or object:IsA("TouchTransmitter")
     end
 
     return true
@@ -1220,10 +1120,7 @@ local function clearObjectRadar(self)
     end
 
     self.ObjectRadarFolder = nil
-
-    table.clear(
-        self.ObjectRadarCache
-    )
+    table.clear(self.ObjectRadarCache)
 end
 
 local function getObjectPosition(object)
@@ -1244,12 +1141,24 @@ local function getObjectPosition(object)
                 "HumanoidRootPart"
             )
 
-        if root and root:IsA("BasePart") then
+        if root
+            and root:IsA("BasePart")
+        then
             return root.Position
+        end
+
+        local success, pivot =
+            pcall(function()
+                return object:GetPivot()
+            end)
+
+        if success and pivot then
+            return pivot.Position
         end
     end
 
-    local parent = object.Parent
+    local parent =
+        object.Parent
 
     if parent
         and parent:IsA("BasePart")
@@ -1266,7 +1175,9 @@ local function getObjectPosition(object)
             )
             or parent.PrimaryPart
 
-        if root and root:IsA("BasePart") then
+        if root
+            and root:IsA("BasePart")
+        then
             return root.Position
         end
     end
@@ -1322,8 +1233,7 @@ local function buildObjectRadar(self)
         local object =
             descendants[i]
 
-        if object
-            ~= self.ObjectRadarFolder
+        if object ~= self.ObjectRadarFolder
             and not object:IsDescendantOf(
                 self.ObjectRadarFolder
             )
@@ -1376,13 +1286,12 @@ local function buildObjectRadar(self)
                         marker.Parent =
                             self.ObjectRadarFolder
 
-                        table.insert(
-                            self.ObjectRadarCache,
-                            {
-                                Object = object,
-                                Marker = marker
-                            }
-                        )
+                        self.ObjectRadarCache[
+                            #self.ObjectRadarCache + 1
+                        ] = {
+                            Object = object,
+                            Marker = marker
+                        }
 
                         found += 1
                     end
@@ -1400,9 +1309,7 @@ local function buildObjectRadar(self)
             item
             and item.Marker
 
-        if marker
-            and marker.Parent
-        then
+        if marker and marker.Parent then
             pcall(function()
                 marker:Destroy()
             end)
@@ -1412,9 +1319,11 @@ end
 
 local function stopObjectRadar(self)
     if self.ObjectRadarConnection then
-        task.cancel(
-            self.ObjectRadarConnection
-        )
+        pcall(function()
+            task.cancel(
+                self.ObjectRadarConnection
+            )
+        end)
     end
 
     self.ObjectRadarConnection = nil
@@ -1454,280 +1363,351 @@ local function setObjectRadar(self, enabled)
     end
 end
 
-local function destroyRealisticEffects(self)
-    local effects = {
-        "RealisticAtmosphere",
-        "RealisticBloom",
-        "RealisticColor",
-        "RealisticSunRays"
-    }
-
-    for _, field in ipairs(effects) do
-        local effect = self[field]
-
-        if effect then
-            pcall(function()
-                effect:Destroy()
-            end)
-
-            self[field] = nil
-        end
-    end
-end
-
 local function backupRealisticLighting(self)
     if self.RealisticLightingBackup then
         return
     end
 
-    local backup = {}
-
-    local properties = {
-        "Brightness",
-        "ExposureCompensation",
-        "ClockTime",
-        "GlobalShadows",
-        "Ambient",
-        "OutdoorAmbient",
-        "FogEnd",
-        "ShadowSoftness",
-        "EnvironmentDiffuseScale",
-        "EnvironmentSpecularScale",
-        "ColorShift_Top",
-        "ColorShift_Bottom",
-        "ColorShift_Left",
-        "ColorShift_Right",
-        "ColorShift_Side",
-        "PrioritizeLightingQuality",
-        "LightingStyle"
+    self.RealisticLightingBackup = {
+        Brightness = Lighting.Brightness,
+        ExposureCompensation =
+            Lighting.ExposureCompensation,
+        ClockTime = Lighting.ClockTime,
+        GlobalShadows = Lighting.GlobalShadows,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        ColorShift_Top =
+            Lighting.ColorShift_Top,
+        ColorShift_Bottom =
+            Lighting.ColorShift_Bottom,
+        EnvironmentDiffuseScale =
+            Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale =
+            Lighting.EnvironmentSpecularScale,
+        ShadowSoftness =
+            Lighting.ShadowSoftness,
+        FogEnd = Lighting.FogEnd,
+        PrioritizeLightingQuality =
+            Lighting.PrioritizeLightingQuality,
     }
-
-    for _, property in ipairs(properties) do
-        local success, value =
-            pcall(function()
-                return Lighting[property]
-            end)
-
-        if success then
-            backup[property] = value
-        end
-    end
-
-    self.RealisticLightingBackup = backup
 end
 
-local function setRealisticLighting(self, enabled)
-    if enabled then
-        if self.RealisticLighting then
-            return
-        end
+local function createRealisticEffect(
+    self,
+    className,
+    field
+)
+    if self[field]
+        and self[field].Parent
+    then
+        return self[field]
+    end
 
-        backupRealisticLighting(self)
+    local effect =
+        Instance.new(className)
 
-        self.RealisticLighting = true
+    effect.Name =
+        "DeveloperV5_Realistic_" ..
+        className
 
-        pcall(function()
-            Lighting.LightingStyle =
-                Enum.LightingStyle.Realistic
-        end)
+    effect.Parent =
+        Lighting
 
-        pcall(function()
-            Lighting.PrioritizeLightingQuality =
-                true
-        end)
+    self[field] = effect
 
-        pcall(function()
-            Lighting.GlobalShadows = true
-        end)
+    return effect
+end
 
-        pcall(function()
-            Lighting.Brightness = 2.15
-        end)
-
-        pcall(function()
-            Lighting.ExposureCompensation =
-                0.25
-        end)
-
-        pcall(function()
-            Lighting.ShadowSoftness = 0.28
-        end)
-
-        pcall(function()
-            Lighting.EnvironmentDiffuseScale =
-                1
-        end)
-
-        pcall(function()
-            Lighting.EnvironmentSpecularScale =
-                1
-        end)
-
-        pcall(function()
-            Lighting.Ambient =
-                Color3.fromRGB(
-                    32,
-                    34,
-                    42
-                )
-        end)
-
-        pcall(function()
-            Lighting.OutdoorAmbient =
-                Color3.fromRGB(
-                    115,
-                    120,
-                    135
-                )
-        end)
-
-        pcall(function()
-            Lighting.ColorShift_Top =
-                Color3.fromRGB(
-                    255,
-                    250,
-                    245
-                )
-        end)
-
-        pcall(function()
-            Lighting.ColorShift_Bottom =
-                Color3.fromRGB(
-                    20,
-                    24,
-                    35
-                )
-        end)
-
-        pcall(function()
-            Lighting.FogEnd = 100000
-        end)
-
-        local oldAtmosphere =
-            Lighting:FindFirstChild(
-                "DeveloperV5_RealisticAtmosphere"
-            )
-
-        if oldAtmosphere then
-            pcall(function()
-                oldAtmosphere:Destroy()
-            end)
-        end
-
-        local atmosphere =
-            Instance.new("Atmosphere")
-
-        atmosphere.Name =
-            "DeveloperV5_RealisticAtmosphere"
-
-        atmosphere.Density = 0.13
-        atmosphere.Offset = 0.18
-        atmosphere.Haze = 0.55
-        atmosphere.Glare = 0.08
-        atmosphere.Color =
-            Color3.fromRGB(
-                215,
-                222,
-                235
-            )
-
-        atmosphere.Decay =
-            Color3.fromRGB(
-                125,
-                135,
-                160
-            )
-
-        atmosphere.Parent = Lighting
-
-        self.RealisticAtmosphere =
-            atmosphere
-
-        local bloom =
-            Instance.new("BloomEffect")
-
-        bloom.Name =
-            "DeveloperV5_RealisticBloom"
-
-        bloom.Intensity = 0.18
-        bloom.Size = 20
-        bloom.Threshold = 1.15
-        bloom.Enabled = true
-        bloom.Parent = Lighting
-
-        self.RealisticBloom = bloom
-
-        local color =
-            Instance.new("ColorCorrectionEffect")
-
-        color.Name =
-            "DeveloperV5_RealisticColor"
-
-        color.Brightness = 0.015
-        color.Contrast = 0.085
-        color.Saturation = 0.06
-        color.TintColor =
-            Color3.fromRGB(
-                255,
-                249,
-                242
-            )
-
-        color.Enabled = true
-        color.Parent = Lighting
-
-        self.RealisticColor = color
-
-        local sun =
-            Instance.new("SunRaysEffect")
-
-        sun.Name =
-            "DeveloperV5_RealisticSunRays"
-
-        sun.Intensity = 0.035
-        sun.Spread = 0.82
-        sun.Enabled = true
-        sun.Parent = Lighting
-
-        self.RealisticSunRays = sun
-
+local function configureRealisticLighting(self)
+    if not self.RealisticLighting then
         return
     end
 
-    self.RealisticLighting = false
+    backupRealisticLighting(self)
 
-    destroyRealisticEffects(self)
+    pcall(function()
+        Lighting.Brightness = 2
+        Lighting.ExposureCompensation = 0.05
+        Lighting.GlobalShadows = true
+        Lighting.EnvironmentDiffuseScale = 1
+        Lighting.EnvironmentSpecularScale = 1
+        Lighting.ShadowSoftness = 0.15
+        Lighting.FogEnd = 100000
+        Lighting.PrioritizeLightingQuality = true
+    end)
+
+    pcall(function()
+        Lighting.Ambient =
+            Color3.fromRGB(
+                38,
+                42,
+                46
+            )
+
+        Lighting.OutdoorAmbient =
+            Color3.fromRGB(
+                70,
+                74,
+                78
+            )
+
+        Lighting.ColorShift_Top =
+            Color3.fromRGB(
+                255,
+                250,
+                240
+            )
+
+        Lighting.ColorShift_Bottom =
+            Color3.fromRGB(
+                205,
+                215,
+                225
+            )
+    end)
+
+    pcall(function()
+        Lighting.LightingStyle =
+            Enum.LightingStyle.Realistic
+    end)
+
+    if self.RealisticAtmosphere
+        and self.RealisticAtmosphere.Parent
+    then
+        self.RealisticAtmosphere:Destroy()
+    end
+
+    local atmosphere =
+        Instance.new("Atmosphere")
+
+    atmosphere.Name =
+        "DeveloperV5_Realistic_Atmosphere"
+
+    atmosphere.Density = 0.12
+    atmosphere.Offset = 0.05
+    atmosphere.Haze = 0.28
+    atmosphere.Glare = 0.12
+    atmosphere.Color =
+        Color3.fromRGB(
+            205,
+            218,
+            235
+        )
+
+    atmosphere.Decay =
+        Color3.fromRGB(
+            120,
+            125,
+            135
+        )
+
+    atmosphere.Parent =
+        Lighting
+
+    self.RealisticAtmosphere =
+        atmosphere
+
+    local colorCorrection =
+        createRealisticEffect(
+            self,
+            "ColorCorrectionEffect",
+            "RealisticColorCorrection"
+        )
+
+    colorCorrection.Brightness = 0.015
+    colorCorrection.Contrast = 0.08
+    colorCorrection.Saturation = 0.04
+    colorCorrection.TintColor =
+        Color3.fromRGB(
+            255,
+            250,
+            245
+        )
+
+    colorCorrection.Enabled = true
+
+    local bloom =
+        createRealisticEffect(
+            self,
+            "BloomEffect",
+            "RealisticBloom"
+        )
+
+    bloom.Intensity = 0.22
+    bloom.Size = 20
+    bloom.Threshold = 0.9
+    bloom.Enabled = true
+
+    local sunRays =
+        createRealisticEffect(
+            self,
+            "SunRaysEffect",
+            "RealisticSunRays"
+        )
+
+    sunRays.Intensity = 0.08
+    sunRays.Spread = 0.55
+    sunRays.Enabled = true
+
+    local depth =
+        createRealisticEffect(
+            self,
+            "DepthOfFieldEffect",
+            "RealisticDepthOfField"
+        )
+
+    depth.FocusDistance = 55
+    depth.InFocusRadius = 45
+    depth.NearIntensity = 0
+    depth.FarIntensity = 0.08
+    depth.Enabled = true
+
+    task.spawn(function()
+        local descendants =
+            Workspace:GetDescendants()
+
+        for i = 1, #descendants do
+            if not self.Alive
+                or not self.RealisticLighting
+            then
+                return
+            end
+
+            local object =
+                descendants[i]
+
+            if object:IsA("BasePart") then
+                pcall(function()
+                    object.CastShadow = true
+                end)
+            end
+
+            if i % 250 == 0 then
+                task.wait()
+            end
+        end
+    end)
+end
+
+local function destroyRealisticEffect(
+    self,
+    field
+)
+    local effect =
+        self[field]
+
+    if effect then
+        pcall(function()
+            effect:Destroy()
+        end)
+
+        self[field] = nil
+    end
+end
+
+local function restoreRealisticLighting(self)
+    destroyRealisticEffect(
+        self,
+        "RealisticColorCorrection"
+    )
+
+    destroyRealisticEffect(
+        self,
+        "RealisticBloom"
+    )
+
+    destroyRealisticEffect(
+        self,
+        "RealisticSunRays"
+    )
+
+    destroyRealisticEffect(
+        self,
+        "RealisticDepthOfField"
+    )
+
+    if self.RealisticAtmosphere then
+        pcall(function()
+            self.RealisticAtmosphere:Destroy()
+        end)
+
+        self.RealisticAtmosphere = nil
+    end
 
     if self.RealisticLightingBackup then
-        for property, value in pairs(
-            self.RealisticLightingBackup
-        ) do
-            pcall(function()
-                Lighting[property] = value
-            end)
-        end
+        pcall(function()
+            Lighting.Brightness =
+                self.RealisticLightingBackup.Brightness
+
+            Lighting.ExposureCompensation =
+                self.RealisticLightingBackup.ExposureCompensation
+
+            Lighting.ClockTime =
+                self.RealisticLightingBackup.ClockTime
+
+            Lighting.GlobalShadows =
+                self.RealisticLightingBackup.GlobalShadows
+
+            Lighting.Ambient =
+                self.RealisticLightingBackup.Ambient
+
+            Lighting.OutdoorAmbient =
+                self.RealisticLightingBackup.OutdoorAmbient
+
+            Lighting.ColorShift_Top =
+                self.RealisticLightingBackup.ColorShift_Top
+
+            Lighting.ColorShift_Bottom =
+                self.RealisticLightingBackup.ColorShift_Bottom
+
+            Lighting.EnvironmentDiffuseScale =
+                self.RealisticLightingBackup.EnvironmentDiffuseScale
+
+            Lighting.EnvironmentSpecularScale =
+                self.RealisticLightingBackup.EnvironmentSpecularScale
+
+            Lighting.ShadowSoftness =
+                self.RealisticLightingBackup.ShadowSoftness
+
+            Lighting.FogEnd =
+                self.RealisticLightingBackup.FogEnd
+
+            Lighting.PrioritizeLightingQuality =
+                self.RealisticLightingBackup.PrioritizeLightingQuality
+        end)
     end
 
     self.RealisticLightingBackup = nil
 end
 
-local function createLightingControls(
+local function setRealisticLighting(
     self,
-    tab
+    enabled
 )
-    tab:CreateSection("高級光影")
+    self.RealisticLighting =
+        enabled == true
 
-    tab:CreateToggle({
-        Name = "高畫質光影",
-        CurrentValue = false,
-        Flag = "DeveloperV5RealisticLighting",
-        Callback = function(value)
-            setRealisticLighting(
-                self,
-                value
-            )
+    if self.RealisticLighting then
+        if self.Fullbright then
+            self.Fullbright = false
         end
-    })
+
+        if self.RemoveAtmosphere then
+            self.RemoveAtmosphere = false
+            stopAtmosphereWatcher(self)
+            restoreAtmosphere(self)
+        end
+
+        if self.RemovePostEffects then
+            self.RemovePostEffects = false
+            stopPostEffectWatcher(self)
+            restorePostEffects(self)
+        end
+
+        configureRealisticLighting(self)
+    else
+        restoreRealisticLighting(self)
+    end
 end
 
 local function createObjectRadarControls(
@@ -1741,11 +1721,8 @@ local function createObjectRadarControls(
         CurrentValue = false,
         Flag = "DeveloperV5ObjectRadar",
         Callback = function(value)
-            setObjectRadar(
-                self,
-                value
-            )
-        end
+            setObjectRadar(self, value)
+        end,
     })
 
     tab:CreateDropdown({
@@ -1770,12 +1747,10 @@ local function createObjectRadarControls(
 
             if self.ObjectRadar then
                 task.spawn(function()
-                    buildObjectRadar(
-                        self
-                    )
+                    buildObjectRadar(self)
                 end)
             end
-        end
+        end,
     })
 
     tab:CreateSlider({
@@ -1789,7 +1764,7 @@ local function createObjectRadarControls(
         Callback = function(value)
             self.ObjectRadarDistance =
                 value
-        end
+        end,
     })
 
     tab:CreateSlider({
@@ -1803,7 +1778,7 @@ local function createObjectRadarControls(
         Callback = function(value)
             self.ObjectRadarMax =
                 value
-        end
+        end,
     })
 
     tab:CreateSlider({
@@ -1821,7 +1796,7 @@ local function createObjectRadarControls(
             if self.ObjectRadar then
                 startObjectRadar(self)
             end
-        end
+        end,
     })
 
     tab:CreateButton({
@@ -1832,20 +1807,41 @@ local function createObjectRadarControls(
                     buildObjectRadar(self)
                 end)
             end
-        end
+        end,
     })
 
     tab:CreateButton({
         Name = "清除偵測標記",
         Callback = function()
             clearObjectRadar(self)
-        end
+        end,
+    })
+end
+
+local function createRealisticLightingControl(
+    self,
+    tab
+)
+    tab:CreateSection("寫實光影")
+
+    tab:CreateToggle({
+        Name = "寫實光影",
+        CurrentValue = false,
+        Flag = "DeveloperV5RealisticLighting",
+        Callback = function(value)
+            setRealisticLighting(
+                self,
+                value
+            )
+        end,
     })
 end
 
 function Visuals:Init(context)
     Player = context.Player
-    self.Shared = context.Shared or {}
+    self.Shared =
+        context.Shared or {}
+
     self.Alive = true
 
     backupFOV(self)
@@ -1875,22 +1871,20 @@ function Visuals:Init(context)
                             getRoot()
 
                         if camera and root then
-                            local focusPosition =
-                                root.Position
-                                + Vector3.new(0, 2, 0)
-
                             self.ZoomDistance =
                                 math.clamp(
                                     (
                                         camera.CFrame.Position
-                                        - focusPosition
+                                        - root.Position
                                     ).Magnitude,
-                                    0.5,
+                                    self.ZoomMinDistance,
                                     self.ZoomMaxDistance
                                 )
                         end
 
-                        enforceZoomLimit(self)
+                        enforceZoomLimit(
+                            self
+                        )
                     end
 
                     if self.ObjectRadar then
@@ -1919,12 +1913,11 @@ function Visuals:Init(context)
                     return
                 end
 
-                if input.UserInputType
-                    == Enum.UserInputType.Keyboard
+                if input.UserInputType ==
+                    Enum.UserInputType.Keyboard
                 then
-                    Keys[
-                        input.KeyCode.Name
-                    ] = true
+                    Keys[input.KeyCode.Name] =
+                        true
                 end
             end
         )
@@ -1934,18 +1927,18 @@ function Visuals:Init(context)
         self,
         UserInputService.InputEnded:Connect(
             function(input)
-                if input.UserInputType
-                    == Enum.UserInputType.Keyboard
+                if input.UserInputType ==
+                    Enum.UserInputType.Keyboard
                 then
-                    Keys[
-                        input.KeyCode.Name
-                    ] = false
+                    Keys[input.KeyCode.Name] =
+                        false
                 end
             end
         )
     )
 
-    local tab = context.Tab
+    local tab =
+        context.Tab
 
     tab:CreateSection("光照")
 
@@ -1958,7 +1951,7 @@ function Visuals:Init(context)
                 self,
                 value
             )
-        end
+        end,
     })
 
     tab:CreateToggle({
@@ -1970,7 +1963,7 @@ function Visuals:Init(context)
                 self,
                 value
             )
-        end
+        end,
     })
 
     tab:CreateToggle({
@@ -1982,10 +1975,10 @@ function Visuals:Init(context)
                 self,
                 value
             )
-        end
+        end,
     })
 
-    createLightingControls(
+    createRealisticLightingControl(
         self,
         tab
     )
@@ -2006,7 +1999,21 @@ function Visuals:Init(context)
                 self,
                 value
             )
-        end
+        end,
+    })
+
+    tab:CreateSlider({
+        Name = "滾輪縮放幅度",
+        Range = {10, 300},
+        Increment = 10,
+        CurrentValue =
+            self.ZoomStep,
+        Suffix = " studs",
+        Flag = "DeveloperV5ZoomStep",
+        Callback = function(value)
+            self.ZoomStep =
+                value
+        end,
     })
 
     tab:CreateToggle({
@@ -2022,7 +2029,7 @@ function Visuals:Init(context)
                     true
                 )
             end
-        end
+        end,
     })
 
     tab:CreateInput({
@@ -2055,7 +2062,7 @@ function Visuals:Init(context)
                 camera.FieldOfView =
                     self.FOV
             end
-        end
+        end,
     })
 
     tab:CreateInput({
@@ -2067,8 +2074,7 @@ function Visuals:Init(context)
         PlaceholderText =
             "例如 10000",
         RemoveTextAfterFocusLost = false,
-        Flag =
-            "DeveloperV5ZoomMaxDistance",
+        Flag = "DeveloperV5ZoomMaxDistance",
         Callback = function(value)
             local number =
                 tonumber(value)
@@ -2084,32 +2090,18 @@ function Visuals:Init(context)
                     100000
                 )
 
-            if self.ZoomDistance
-                > self.ZoomMaxDistance
-            then
-                self.ZoomDistance =
-                    self.ZoomMaxDistance
-            end
-
             if self.ZoomUnlock then
-                enforceZoomLimit(self)
-            end
-        end
-    })
+                self.ZoomDistance =
+                    math.min(
+                        self.ZoomDistance,
+                        self.ZoomMaxDistance
+                    )
 
-    tab:CreateSlider({
-        Name = "滾輪縮放幅度",
-        Range = {10, 1000},
-        Increment = 10,
-        CurrentValue =
-            self.ZoomStep,
-        Suffix = " studs",
-        Flag =
-            "DeveloperV5ZoomStep",
-        Callback = function(value)
-            self.ZoomStep =
-                value
-        end
+                enforceZoomLimit(
+                    self
+                )
+            end
+        end,
     })
 
     tab:CreateButton({
@@ -2148,30 +2140,25 @@ function Visuals:Init(context)
                 local root =
                     getRoot()
 
-                local camera =
-                    getCamera()
-
-                if root and camera then
-                    local focusPosition =
-                        root.Position
-                        + Vector3.new(0, 2, 0)
-
+                if camera and root then
                     self.ZoomDistance =
                         math.clamp(
                             (
                                 camera.CFrame.Position
-                                - focusPosition
+                                - root.Position
                             ).Magnitude,
-                            0.5,
+                            self.ZoomMinDistance,
                             self.ZoomMaxDistance
                         )
                 end
 
-                enforceZoomLimit(self)
+                enforceZoomLimit(
+                    self
+                )
             end
 
             setMouseNormal()
-        end
+        end,
     })
 
     self.Shared.StopFreeCam =
@@ -2262,10 +2249,8 @@ function Visuals:Cleanup()
         false
     )
 
-    setRealisticLighting(
-        self,
-        false
-    )
+    self.RealisticLighting = false
+    restoreRealisticLighting(self)
 
     pcall(function()
         Player.CameraMinZoomDistance =
@@ -2274,10 +2259,9 @@ function Visuals:Cleanup()
         Player.CameraMaxZoomDistance =
             self.OriginalCameraMaxZoomDistance
 
-        if self.OriginalCameraMode then
-            Player.CameraMode =
-                self.OriginalCameraMode
-        end
+        Player.CameraMode =
+            self.OriginalCameraMode
+            or Enum.CameraMode.Classic
     end)
 
     setMouseNormal()
@@ -2305,6 +2289,12 @@ function Visuals:Cleanup()
 
     clearObjectRadar(self)
 
+    pcall(function()
+        RunService:UnbindFromRenderStep(
+            "DeveloperV5ZoomRender"
+        )
+    end)
+
     for i = #self.Connections, 1, -1 do
         disconnect(
             self.Connections[i]
@@ -2314,15 +2304,12 @@ function Visuals:Cleanup()
     end
 
     table.clear(Keys)
-
     table.clear(
         self.AtmosphereBackup
     )
-
     table.clear(
         self.PostEffectsBackup
     )
-
     table.clear(
         self.ObjectRadarCache
     )
@@ -2342,16 +2329,11 @@ function Visuals:Cleanup()
     self.ObjectRadarConnection = nil
     self.RealisticLightingBackup = nil
     self.RealisticAtmosphere = nil
+    self.RealisticColorCorrection = nil
     self.RealisticBloom = nil
-    self.RealisticColor = nil
     self.RealisticSunRays = nil
+    self.RealisticDepthOfField = nil
     self.FreeCamRotating = false
-
-    pcall(function()
-        RunService:UnbindFromRenderStep(
-            "DeveloperV5_CustomZoom"
-        )
-    end)
 
     if self.Shared then
         self.Shared.FreeCamActive = false
