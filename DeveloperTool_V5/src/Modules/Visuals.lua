@@ -434,13 +434,11 @@ local function stopZoomWatcher(self)
     disconnect(self.ZoomPropertyConnection1)
     disconnect(self.ZoomPropertyConnection2)
 
-    if self.ZoomRenderConnection then
-        pcall(function()
-            RunService:UnbindFromRenderStep(
-                "DeveloperV5_CustomZoom"
-            )
-        end)
-    end
+    pcall(function()
+        RunService:UnbindFromRenderStep(
+            "DeveloperV5_CustomZoom"
+        )
+    end)
 
     self.ZoomConnection = nil
     self.ZoomPropertyConnection1 = nil
@@ -619,12 +617,8 @@ local function setZoomUnlock(self, enabled)
                 and self.ZoomUnlock
             then
                 pcall(function()
-                    if Player.CameraMinZoomDistance
-                        ~= 0.5
-                    then
-                        Player.CameraMinZoomDistance =
-                            0.5
-                    end
+                    Player.CameraMinZoomDistance =
+                        0.5
                 end)
             end
         end)
@@ -637,12 +631,8 @@ local function setZoomUnlock(self, enabled)
                 and self.ZoomUnlock
             then
                 pcall(function()
-                    if Player.CameraMaxZoomDistance
-                        ~= self.ZoomMaxDistance
-                    then
-                        Player.CameraMaxZoomDistance =
-                            self.ZoomMaxDistance
-                    end
+                    Player.CameraMaxZoomDistance =
+                        self.ZoomMaxDistance
                 end)
             end
         end)
@@ -864,7 +854,9 @@ local function startFreeCam(self)
         and self.Shared.FlightActive
         and self.Shared.StopFlight
     then
-        pcall(self.Shared.StopFlight)
+        pcall(
+            self.Shared.StopFlight
+        )
     end
 
     local camera = getCamera()
@@ -873,7 +865,10 @@ local function startFreeCam(self)
         return
     end
 
-    stopFreeCam(self, false)
+    stopFreeCam(
+        self,
+        false
+    )
 
     self.OriginalMouseBehavior =
         UserInputService.MouseBehavior
@@ -1036,19 +1031,6 @@ local function startFreeCam(self)
                         math.clamp(
                             self.FreeCamPitch
                                 - input.Delta.Y * 0.0025,
-                            math.rad(-89),
-                            math.rad(89)
-                        )
-                elseif input.UserInputType
-                    == Enum.UserInputType.Touch
-                then
-                    self.FreeCamYaw -=
-                        input.Delta.X * 0.004
-
-                    self.FreeCamPitch =
-                        math.clamp(
-                            self.FreeCamPitch
-                                - input.Delta.Y * 0.004,
                             math.rad(-89),
                             math.rad(89)
                         )
@@ -1472,31 +1454,25 @@ local function setObjectRadar(self, enabled)
     end
 end
 
-local function createRealisticEffect(
-    self,
-    className,
-    propertyName
-)
-    local old =
-        self[propertyName]
+local function destroyRealisticEffects(self)
+    local effects = {
+        "RealisticAtmosphere",
+        "RealisticBloom",
+        "RealisticColor",
+        "RealisticSunRays"
+    }
 
-    if old then
-        pcall(function()
-            old:Destroy()
-        end)
+    for _, field in ipairs(effects) do
+        local effect = self[field]
+
+        if effect then
+            pcall(function()
+                effect:Destroy()
+            end)
+
+            self[field] = nil
+        end
     end
-
-    local effect =
-        Instance.new(className)
-
-    effect.Name =
-        "DeveloperV5_" .. className
-
-    effect.Parent = Lighting
-
-    self[propertyName] = effect
-
-    return effect
 end
 
 local function backupRealisticLighting(self)
@@ -1504,24 +1480,40 @@ local function backupRealisticLighting(self)
         return
     end
 
-    self.RealisticLightingBackup = {
-        Brightness = Lighting.Brightness,
-        ClockTime = Lighting.ClockTime,
-        ExposureCompensation =
-            Lighting.ExposureCompensation,
-        GlobalShadows =
-            Lighting.GlobalShadows,
-        Ambient = Lighting.Ambient,
-        OutdoorAmbient =
-            Lighting.OutdoorAmbient,
-        FogEnd = Lighting.FogEnd,
-        ShadowSoftness =
-            Lighting.ShadowSoftness,
-        LightingStyle =
-            Lighting.LightingStyle,
-        PrioritizeLightingQuality =
-            Lighting.PrioritizeLightingQuality
+    local backup = {}
+
+    local properties = {
+        "Brightness",
+        "ExposureCompensation",
+        "ClockTime",
+        "GlobalShadows",
+        "Ambient",
+        "OutdoorAmbient",
+        "FogEnd",
+        "ShadowSoftness",
+        "EnvironmentDiffuseScale",
+        "EnvironmentSpecularScale",
+        "ColorShift_Top",
+        "ColorShift_Bottom",
+        "ColorShift_Left",
+        "ColorShift_Right",
+        "ColorShift_Side",
+        "PrioritizeLightingQuality",
+        "LightingStyle"
     }
+
+    for _, property in ipairs(properties) do
+        local success, value =
+            pcall(function()
+                return Lighting[property]
+            end)
+
+        if success then
+            backup[property] = value
+        end
+    end
+
+    self.RealisticLightingBackup = backup
 end
 
 local function setRealisticLighting(self, enabled)
@@ -1537,199 +1529,186 @@ local function setRealisticLighting(self, enabled)
         pcall(function()
             Lighting.LightingStyle =
                 Enum.LightingStyle.Realistic
-
-            Lighting.PrioritizeLightingQuality =
-                true
-
-            Lighting.GlobalShadows =
-                true
-
-            Lighting.ShadowSoftness =
-                0.35
-
-            Lighting.Brightness =
-                2.2
-
-            Lighting.ExposureCompensation =
-                0.35
-
-            Lighting.ClockTime =
-                14
-
-            Lighting.Ambient =
-                Color3.fromRGB(
-                    30,
-                    32,
-                    38
-                )
-
-            Lighting.OutdoorAmbient =
-                Color3.fromRGB(
-                    105,
-                    110,
-                    120
-                )
-
-            Lighting.FogEnd =
-                100000
         end)
 
-        local atmosphere =
+        pcall(function()
+            Lighting.PrioritizeLightingQuality =
+                true
+        end)
+
+        pcall(function()
+            Lighting.GlobalShadows = true
+        end)
+
+        pcall(function()
+            Lighting.Brightness = 2.15
+        end)
+
+        pcall(function()
+            Lighting.ExposureCompensation =
+                0.25
+        end)
+
+        pcall(function()
+            Lighting.ShadowSoftness = 0.28
+        end)
+
+        pcall(function()
+            Lighting.EnvironmentDiffuseScale =
+                1
+        end)
+
+        pcall(function()
+            Lighting.EnvironmentSpecularScale =
+                1
+        end)
+
+        pcall(function()
+            Lighting.Ambient =
+                Color3.fromRGB(
+                    32,
+                    34,
+                    42
+                )
+        end)
+
+        pcall(function()
+            Lighting.OutdoorAmbient =
+                Color3.fromRGB(
+                    115,
+                    120,
+                    135
+                )
+        end)
+
+        pcall(function()
+            Lighting.ColorShift_Top =
+                Color3.fromRGB(
+                    255,
+                    250,
+                    245
+                )
+        end)
+
+        pcall(function()
+            Lighting.ColorShift_Bottom =
+                Color3.fromRGB(
+                    20,
+                    24,
+                    35
+                )
+        end)
+
+        pcall(function()
+            Lighting.FogEnd = 100000
+        end)
+
+        local oldAtmosphere =
             Lighting:FindFirstChild(
                 "DeveloperV5_RealisticAtmosphere"
             )
 
-        if atmosphere then
+        if oldAtmosphere then
             pcall(function()
-                atmosphere:Destroy()
+                oldAtmosphere:Destroy()
             end)
         end
 
-        atmosphere =
-            createRealisticEffect(
-                self,
-                "Atmosphere",
-                "RealisticAtmosphere"
+        local atmosphere =
+            Instance.new("Atmosphere")
+
+        atmosphere.Name =
+            "DeveloperV5_RealisticAtmosphere"
+
+        atmosphere.Density = 0.13
+        atmosphere.Offset = 0.18
+        atmosphere.Haze = 0.55
+        atmosphere.Glare = 0.08
+        atmosphere.Color =
+            Color3.fromRGB(
+                215,
+                222,
+                235
             )
 
-        pcall(function()
-            atmosphere.Density = 0.18
-            atmosphere.Offset = 0.15
-            atmosphere.Haze = 0.65
-            atmosphere.Glare = 0.08
-            atmosphere.Color =
-                Color3.fromRGB(
-                    205,
-                    215,
-                    230
-                )
-            atmosphere.Decay =
-                Color3.fromRGB(
-                    150,
-                    160,
-                    180
-                )
-        end)
+        atmosphere.Decay =
+            Color3.fromRGB(
+                125,
+                135,
+                160
+            )
+
+        atmosphere.Parent = Lighting
+
+        self.RealisticAtmosphere =
+            atmosphere
 
         local bloom =
-            createRealisticEffect(
-                self,
-                "BloomEffect",
-                "RealisticBloom"
-            )
+            Instance.new("BloomEffect")
 
-        pcall(function()
-            bloom.Intensity = 0.28
-            bloom.Size = 18
-            bloom.Threshold = 1.05
-            bloom.Enabled = true
-        end)
+        bloom.Name =
+            "DeveloperV5_RealisticBloom"
+
+        bloom.Intensity = 0.18
+        bloom.Size = 20
+        bloom.Threshold = 1.15
+        bloom.Enabled = true
+        bloom.Parent = Lighting
+
+        self.RealisticBloom = bloom
 
         local color =
-            createRealisticEffect(
-                self,
-                "ColorCorrectionEffect",
-                "RealisticColor"
+            Instance.new("ColorCorrectionEffect")
+
+        color.Name =
+            "DeveloperV5_RealisticColor"
+
+        color.Brightness = 0.015
+        color.Contrast = 0.085
+        color.Saturation = 0.06
+        color.TintColor =
+            Color3.fromRGB(
+                255,
+                249,
+                242
             )
 
-        pcall(function()
-            color.Brightness = 0.02
-            color.Contrast = 0.08
-            color.Saturation = 0.08
-            color.TintColor =
-                Color3.fromRGB(
-                    255,
-                    248,
-                    240
-                )
-            color.Enabled = true
-        end)
+        color.Enabled = true
+        color.Parent = Lighting
+
+        self.RealisticColor = color
 
         local sun =
-            createRealisticEffect(
-                self,
-                "SunRaysEffect",
-                "RealisticSunRays"
-            )
+            Instance.new("SunRaysEffect")
 
-        pcall(function()
-            sun.Intensity = 0.045
-            sun.Spread = 0.82
-            sun.Enabled = true
-        end)
+        sun.Name =
+            "DeveloperV5_RealisticSunRays"
+
+        sun.Intensity = 0.035
+        sun.Spread = 0.82
+        sun.Enabled = true
+        sun.Parent = Lighting
+
+        self.RealisticSunRays = sun
 
         return
     end
 
     self.RealisticLighting = false
 
-    if self.RealisticAtmosphere then
-        pcall(function()
-            self.RealisticAtmosphere:Destroy()
-        end)
-
-        self.RealisticAtmosphere = nil
-    end
-
-    if self.RealisticBloom then
-        pcall(function()
-            self.RealisticBloom:Destroy()
-        end)
-
-        self.RealisticBloom = nil
-    end
-
-    if self.RealisticColor then
-        pcall(function()
-            self.RealisticColor:Destroy()
-        end)
-
-        self.RealisticColor = nil
-    end
-
-    if self.RealisticSunRays then
-        pcall(function()
-            self.RealisticSunRays:Destroy()
-        end)
-
-        self.RealisticSunRays = nil
-    end
+    destroyRealisticEffects(self)
 
     if self.RealisticLightingBackup then
-        pcall(function()
-            Lighting.Brightness =
-                self.RealisticLightingBackup.Brightness
-
-            Lighting.ClockTime =
-                self.RealisticLightingBackup.ClockTime
-
-            Lighting.ExposureCompensation =
-                self.RealisticLightingBackup.ExposureCompensation
-
-            Lighting.GlobalShadows =
-                self.RealisticLightingBackup.GlobalShadows
-
-            Lighting.Ambient =
-                self.RealisticLightingBackup.Ambient
-
-            Lighting.OutdoorAmbient =
-                self.RealisticLightingBackup.OutdoorAmbient
-
-            Lighting.FogEnd =
-                self.RealisticLightingBackup.FogEnd
-
-            Lighting.ShadowSoftness =
-                self.RealisticLightingBackup.ShadowSoftness
-
-            Lighting.LightingStyle =
-                self.RealisticLightingBackup.LightingStyle
-
-            Lighting.PrioritizeLightingQuality =
-                self.RealisticLightingBackup.PrioritizeLightingQuality
-        end)
-
-        self.RealisticLightingBackup = nil
+        for property, value in pairs(
+            self.RealisticLightingBackup
+        ) do
+            pcall(function()
+                Lighting[property] = value
+            end)
+        end
     end
+
+    self.RealisticLightingBackup = nil
 end
 
 local function createLightingControls(
@@ -1739,7 +1718,7 @@ local function createLightingControls(
     tab:CreateSection("高級光影")
 
     tab:CreateToggle({
-        Name = "寫實光影",
+        Name = "高畫質光影",
         CurrentValue = false,
         Flag = "DeveloperV5RealisticLighting",
         Callback = function(value)
@@ -1877,7 +1856,10 @@ function Visuals:Init(context)
         Player.CharacterAdded:Connect(
             function()
                 if self.FreeCam then
-                    stopFreeCam(self, true)
+                    stopFreeCam(
+                        self,
+                        true
+                    )
                 end
 
                 task.defer(function()
@@ -1911,27 +1893,11 @@ function Visuals:Init(context)
                         enforceZoomLimit(self)
                     end
 
-                    if self.RealisticLighting then
-                        task.defer(function()
-                            if self.Alive
-                                and self.RealisticLighting
-                            then
-                                setRealisticLighting(
-                                    self,
-                                    false
-                                )
-
-                                setRealisticLighting(
-                                    self,
-                                    true
-                                )
-                            end
-                        end)
-                    end
-
                     if self.ObjectRadar then
                         task.spawn(function()
-                            buildObjectRadar(self)
+                            buildObjectRadar(
+                                self
+                            )
                         end)
                     end
                 end)
@@ -2248,7 +2214,9 @@ function Visuals:Init(context)
         function()
             if self.ObjectRadar then
                 task.spawn(function()
-                    buildObjectRadar(self)
+                    buildObjectRadar(
+                        self
+                    )
                 end)
             end
         end
