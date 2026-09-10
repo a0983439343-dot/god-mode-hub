@@ -45,22 +45,12 @@ local Visuals = {
     ObjectRadarConnection = nil,
     ObjectRadarFolder = nil,
     ObjectRadarCache = {},
-    LightingStudio = false,
-    LightingStudioBrightness = 3,
-    LightingStudioExposure = 0,
-    LightingStudioClockTime = 14,
-    LightingStudioShadow = true,
-    LightingStudioBloom = false,
-    LightingStudioColor = false,
-    LightingStudioSunRays = false,
-    LightingStudioDepth = false,
-    LightingStudioBlur = false,
-    LightingStudioBloomEffect = nil,
-    LightingStudioColorEffect = nil,
-    LightingStudioSunEffect = nil,
-    LightingStudioDepthEffect = nil,
-    LightingStudioBlurEffect = nil,
-    LightingStudioBackup = nil,
+    RealisticLighting = false,
+    RealisticLightingBackup = nil,
+    RealisticAtmosphere = nil,
+    RealisticBloom = nil,
+    RealisticColor = nil,
+    RealisticSunRays = nil,
     OriginalMouseBehavior = Enum.MouseBehavior.Default
 }
 
@@ -632,7 +622,8 @@ local function setZoomUnlock(self, enabled)
                     if Player.CameraMinZoomDistance
                         ~= 0.5
                     then
-                        Player.CameraMinZoomDistance = 0.5
+                        Player.CameraMinZoomDistance =
+                            0.5
                     end
                 end)
             end
@@ -906,7 +897,9 @@ local function startFreeCam(self)
 
     local humanoid =
         character
-        and character:FindFirstChildOfClass("Humanoid")
+        and character:FindFirstChildOfClass(
+            "Humanoid"
+        )
 
     local root =
         character
@@ -929,8 +922,10 @@ local function startFreeCam(self)
             WalkSpeed = humanoid.WalkSpeed,
             JumpPower = humanoid.JumpPower,
             JumpHeight = humanoid.JumpHeight,
-            UseJumpPower = humanoid.UseJumpPower,
-            AutoRotate = humanoid.AutoRotate
+            UseJumpPower =
+                humanoid.UseJumpPower,
+            AutoRotate =
+                humanoid.AutoRotate
         }
 
         humanoid.WalkSpeed = 0
@@ -942,6 +937,7 @@ local function startFreeCam(self)
         end
 
         humanoid.AutoRotate = false
+
         humanoid:Move(
             Vector3.zero,
             false
@@ -1476,56 +1472,18 @@ local function setObjectRadar(self, enabled)
     end
 end
 
-local function backupLightingStudio(self)
-    if self.LightingStudioBackup then
-        return
-    end
-
-    self.LightingStudioBackup = {
-        Brightness =
-            Lighting.Brightness,
-
-        ExposureCompensation =
-            Lighting.ExposureCompensation,
-
-        ClockTime =
-            Lighting.ClockTime,
-
-        GlobalShadows =
-            Lighting.GlobalShadows,
-
-        Ambient =
-            Lighting.Ambient,
-
-        OutdoorAmbient =
-            Lighting.OutdoorAmbient
-    }
-end
-
-local function removeLightingEffect(
-    self,
-    field
-)
-    local effect = self[field]
-
-    if effect then
-        pcall(function()
-            effect:Destroy()
-        end)
-
-        self[field] = nil
-    end
-end
-
-local function createLightingEffect(
+local function createRealisticEffect(
     self,
     className,
-    field
+    propertyName
 )
-    if self[field]
-        and self[field].Parent
-    then
-        return self[field]
+    local old =
+        self[propertyName]
+
+    if old then
+        pcall(function()
+            old:Destroy()
+        end)
     end
 
     local effect =
@@ -1536,196 +1494,241 @@ local function createLightingEffect(
 
     effect.Parent = Lighting
 
-    self[field] = effect
+    self[propertyName] = effect
 
     return effect
 end
 
-local function updateLightingStudio(self)
-    if not self.LightingStudio then
+local function backupRealisticLighting(self)
+    if self.RealisticLightingBackup then
         return
     end
 
-    backupLightingStudio(self)
-
-    pcall(function()
-        Lighting.Brightness =
-            self.LightingStudioBrightness
-
-        Lighting.ExposureCompensation =
-            self.LightingStudioExposure
-
-        Lighting.ClockTime =
-            self.LightingStudioClockTime
-
-        Lighting.GlobalShadows =
-            self.LightingStudioShadow
-    end)
-
-    if self.LightingStudioBloom then
-        local effect =
-            createLightingEffect(
-                self,
-                "BloomEffect",
-                "LightingStudioBloomEffect"
-            )
-
-        effect.Intensity = 1.2
-        effect.Size = 24
-        effect.Threshold = 1
-        effect.Enabled = true
-    else
-        removeLightingEffect(
-            self,
-            "LightingStudioBloomEffect"
-        )
-    end
-
-    if self.LightingStudioColor then
-        local effect =
-            createLightingEffect(
-                self,
-                "ColorCorrectionEffect",
-                "LightingStudioColorEffect"
-            )
-
-        effect.Brightness = 0.05
-        effect.Contrast = 0.1
-        effect.Saturation = 0.05
-
-        effect.TintColor =
-            Color3.fromRGB(
-                255,
-                245,
-                230
-            )
-
-        effect.Enabled = true
-    else
-        removeLightingEffect(
-            self,
-            "LightingStudioColorEffect"
-        )
-    end
-
-    if self.LightingStudioSunRays then
-        local effect =
-            createLightingEffect(
-                self,
-                "SunRaysEffect",
-                "LightingStudioSunEffect"
-            )
-
-        effect.Intensity = 0.15
-        effect.Spread = 0.8
-        effect.Enabled = true
-    else
-        removeLightingEffect(
-            self,
-            "LightingStudioSunEffect"
-        )
-    end
-
-    if self.LightingStudioDepth then
-        local effect =
-            createLightingEffect(
-                self,
-                "DepthOfFieldEffect",
-                "LightingStudioDepthEffect"
-            )
-
-        effect.FocusDistance = 50
-        effect.InFocusRadius = 35
-        effect.NearIntensity = 0.05
-        effect.FarIntensity = 0.15
-        effect.Enabled = true
-    else
-        removeLightingEffect(
-            self,
-            "LightingStudioDepthEffect"
-        )
-    end
-
-    if self.LightingStudioBlur then
-        local effect =
-            createLightingEffect(
-                self,
-                "BlurEffect",
-                "LightingStudioBlurEffect"
-            )
-
-        effect.Size = 2
-        effect.Enabled = true
-    else
-        removeLightingEffect(
-            self,
-            "LightingStudioBlurEffect"
-        )
-    end
+    self.RealisticLightingBackup = {
+        Brightness = Lighting.Brightness,
+        ClockTime = Lighting.ClockTime,
+        ExposureCompensation =
+            Lighting.ExposureCompensation,
+        GlobalShadows =
+            Lighting.GlobalShadows,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient =
+            Lighting.OutdoorAmbient,
+        FogEnd = Lighting.FogEnd,
+        ShadowSoftness =
+            Lighting.ShadowSoftness,
+        LightingStyle =
+            Lighting.LightingStyle,
+        PrioritizeLightingQuality =
+            Lighting.PrioritizeLightingQuality
+    }
 end
 
-local function restoreLightingStudio(self)
-    removeLightingEffect(
-        self,
-        "LightingStudioBloomEffect"
-    )
+local function setRealisticLighting(self, enabled)
+    if enabled then
+        if self.RealisticLighting then
+            return
+        end
 
-    removeLightingEffect(
-        self,
-        "LightingStudioColorEffect"
-    )
+        backupRealisticLighting(self)
 
-    removeLightingEffect(
-        self,
-        "LightingStudioSunEffect"
-    )
+        self.RealisticLighting = true
 
-    removeLightingEffect(
-        self,
-        "LightingStudioDepthEffect"
-    )
-
-    removeLightingEffect(
-        self,
-        "LightingStudioBlurEffect"
-    )
-
-    if self.LightingStudioBackup then
         pcall(function()
-            Lighting.Brightness =
-                self.LightingStudioBackup.Brightness
+            Lighting.LightingStyle =
+                Enum.LightingStyle.Realistic
 
-            Lighting.ExposureCompensation =
-                self.LightingStudioBackup.ExposureCompensation
-
-            Lighting.ClockTime =
-                self.LightingStudioBackup.ClockTime
+            Lighting.PrioritizeLightingQuality =
+                true
 
             Lighting.GlobalShadows =
-                self.LightingStudioBackup.GlobalShadows
+                true
+
+            Lighting.ShadowSoftness =
+                0.35
+
+            Lighting.Brightness =
+                2.2
+
+            Lighting.ExposureCompensation =
+                0.35
+
+            Lighting.ClockTime =
+                14
 
             Lighting.Ambient =
-                self.LightingStudioBackup.Ambient
+                Color3.fromRGB(
+                    30,
+                    32,
+                    38
+                )
 
             Lighting.OutdoorAmbient =
-                self.LightingStudioBackup.OutdoorAmbient
+                Color3.fromRGB(
+                    105,
+                    110,
+                    120
+                )
+
+            Lighting.FogEnd =
+                100000
         end)
+
+        local atmosphere =
+            Lighting:FindFirstChild(
+                "DeveloperV5_RealisticAtmosphere"
+            )
+
+        if atmosphere then
+            pcall(function()
+                atmosphere:Destroy()
+            end)
+        end
+
+        atmosphere =
+            createRealisticEffect(
+                self,
+                "Atmosphere",
+                "RealisticAtmosphere"
+            )
+
+        pcall(function()
+            atmosphere.Density = 0.18
+            atmosphere.Offset = 0.15
+            atmosphere.Haze = 0.65
+            atmosphere.Glare = 0.08
+            atmosphere.Color =
+                Color3.fromRGB(
+                    205,
+                    215,
+                    230
+                )
+            atmosphere.Decay =
+                Color3.fromRGB(
+                    150,
+                    160,
+                    180
+                )
+        end)
+
+        local bloom =
+            createRealisticEffect(
+                self,
+                "BloomEffect",
+                "RealisticBloom"
+            )
+
+        pcall(function()
+            bloom.Intensity = 0.28
+            bloom.Size = 18
+            bloom.Threshold = 1.05
+            bloom.Enabled = true
+        end)
+
+        local color =
+            createRealisticEffect(
+                self,
+                "ColorCorrectionEffect",
+                "RealisticColor"
+            )
+
+        pcall(function()
+            color.Brightness = 0.02
+            color.Contrast = 0.08
+            color.Saturation = 0.08
+            color.TintColor =
+                Color3.fromRGB(
+                    255,
+                    248,
+                    240
+                )
+            color.Enabled = true
+        end)
+
+        local sun =
+            createRealisticEffect(
+                self,
+                "SunRaysEffect",
+                "RealisticSunRays"
+            )
+
+        pcall(function()
+            sun.Intensity = 0.045
+            sun.Spread = 0.82
+            sun.Enabled = true
+        end)
+
+        return
     end
 
-    self.LightingStudioBackup = nil
-end
+    self.RealisticLighting = false
 
-local function setLightingStudio(
-    self,
-    enabled
-)
-    self.LightingStudio =
-        enabled == true
+    if self.RealisticAtmosphere then
+        pcall(function()
+            self.RealisticAtmosphere:Destroy()
+        end)
 
-    if self.LightingStudio then
-        updateLightingStudio(self)
-    else
-        restoreLightingStudio(self)
+        self.RealisticAtmosphere = nil
+    end
+
+    if self.RealisticBloom then
+        pcall(function()
+            self.RealisticBloom:Destroy()
+        end)
+
+        self.RealisticBloom = nil
+    end
+
+    if self.RealisticColor then
+        pcall(function()
+            self.RealisticColor:Destroy()
+        end)
+
+        self.RealisticColor = nil
+    end
+
+    if self.RealisticSunRays then
+        pcall(function()
+            self.RealisticSunRays:Destroy()
+        end)
+
+        self.RealisticSunRays = nil
+    end
+
+    if self.RealisticLightingBackup then
+        pcall(function()
+            Lighting.Brightness =
+                self.RealisticLightingBackup.Brightness
+
+            Lighting.ClockTime =
+                self.RealisticLightingBackup.ClockTime
+
+            Lighting.ExposureCompensation =
+                self.RealisticLightingBackup.ExposureCompensation
+
+            Lighting.GlobalShadows =
+                self.RealisticLightingBackup.GlobalShadows
+
+            Lighting.Ambient =
+                self.RealisticLightingBackup.Ambient
+
+            Lighting.OutdoorAmbient =
+                self.RealisticLightingBackup.OutdoorAmbient
+
+            Lighting.FogEnd =
+                self.RealisticLightingBackup.FogEnd
+
+            Lighting.ShadowSoftness =
+                self.RealisticLightingBackup.ShadowSoftness
+
+            Lighting.LightingStyle =
+                self.RealisticLightingBackup.LightingStyle
+
+            Lighting.PrioritizeLightingQuality =
+                self.RealisticLightingBackup.PrioritizeLightingQuality
+        end)
+
+        self.RealisticLightingBackup = nil
     end
 end
 
@@ -1736,149 +1739,14 @@ local function createLightingControls(
     tab:CreateSection("高級光影")
 
     tab:CreateToggle({
-        Name = "光影工作室",
+        Name = "寫實光影",
         CurrentValue = false,
-        Flag = "DeveloperV5LightingStudio",
+        Flag = "DeveloperV5RealisticLighting",
         Callback = function(value)
-            setLightingStudio(
+            setRealisticLighting(
                 self,
                 value
             )
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "柔和光暈",
-        CurrentValue = false,
-        Flag = "DeveloperV5SoftBloom",
-        Callback = function(value)
-            self.LightingStudioBloom =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "電影色調",
-        CurrentValue = false,
-        Flag = "DeveloperV5CinemaColor",
-        Callback = function(value)
-            self.LightingStudioColor =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "陽光光束",
-        CurrentValue = false,
-        Flag = "DeveloperV5SunRays",
-        Callback = function(value)
-            self.LightingStudioSunRays =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "景深效果",
-        CurrentValue = false,
-        Flag = "DeveloperV5DepthOfField",
-        Callback = function(value)
-            self.LightingStudioDepth =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "柔焦效果",
-        CurrentValue = false,
-        Flag = "DeveloperV5SoftBlur",
-        Callback = function(value)
-            self.LightingStudioBlur =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateToggle({
-        Name = "強化陰影",
-        CurrentValue = true,
-        Flag = "DeveloperV5EnhancedShadow",
-        Callback = function(value)
-            self.LightingStudioShadow =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateSlider({
-        Name = "光影亮度",
-        Range = {0, 10},
-        Increment = 0.1,
-        CurrentValue =
-            self.LightingStudioBrightness,
-        Suffix = "",
-        Flag = "DeveloperV5LightingBrightness",
-        Callback = function(value)
-            self.LightingStudioBrightness =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateSlider({
-        Name = "曝光強度",
-        Range = {-5, 5},
-        Increment = 0.1,
-        CurrentValue =
-            self.LightingStudioExposure,
-        Suffix = "",
-        Flag = "DeveloperV5LightingExposure",
-        Callback = function(value)
-            self.LightingStudioExposure =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateSlider({
-        Name = "世界時間",
-        Range = {0, 24},
-        Increment = 0.1,
-        CurrentValue =
-            self.LightingStudioClockTime,
-        Suffix = "",
-        Flag = "DeveloperV5LightingTime",
-        Callback = function(value)
-            self.LightingStudioClockTime =
-                value
-
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateButton({
-        Name = "套用光影設定",
-        Callback = function()
-            updateLightingStudio(self)
-        end
-    })
-
-    tab:CreateButton({
-        Name = "還原光影",
-        Callback = function()
-            self.LightingStudio = false
-            restoreLightingStudio(self)
         end
     })
 end
@@ -1923,7 +1791,9 @@ local function createObjectRadarControls(
 
             if self.ObjectRadar then
                 task.spawn(function()
-                    buildObjectRadar(self)
+                    buildObjectRadar(
+                        self
+                    )
                 end)
             end
         end
@@ -2039,6 +1909,24 @@ function Visuals:Init(context)
                         end
 
                         enforceZoomLimit(self)
+                    end
+
+                    if self.RealisticLighting then
+                        task.defer(function()
+                            if self.Alive
+                                and self.RealisticLighting
+                            then
+                                setRealisticLighting(
+                                    self,
+                                    false
+                                )
+
+                                setRealisticLighting(
+                                    self,
+                                    true
+                                )
+                            end
+                        end)
                     end
 
                     if self.ObjectRadar then
@@ -2253,7 +2141,8 @@ function Visuals:Init(context)
         Flag =
             "DeveloperV5ZoomStep",
         Callback = function(value)
-            self.ZoomStep = value
+            self.ZoomStep =
+                value
         end
     })
 
@@ -2364,9 +2253,9 @@ function Visuals:Init(context)
             end
         end
 
-    self.Shared.SetLightingStudio =
+    self.Shared.SetRealisticLighting =
         function(value)
-            setLightingStudio(
+            setRealisticLighting(
                 self,
                 value
             )
@@ -2405,9 +2294,10 @@ function Visuals:Cleanup()
         false
     )
 
-    self.LightingStudio = false
-
-    restoreLightingStudio(self)
+    setRealisticLighting(
+        self,
+        false
+    )
 
     pcall(function()
         Player.CameraMinZoomDistance =
@@ -2456,12 +2346,15 @@ function Visuals:Cleanup()
     end
 
     table.clear(Keys)
+
     table.clear(
         self.AtmosphereBackup
     )
+
     table.clear(
         self.PostEffectsBackup
     )
+
     table.clear(
         self.ObjectRadarCache
     )
@@ -2479,7 +2372,11 @@ function Visuals:Cleanup()
     self.ZoomPropertyConnection2 = nil
     self.ZoomRenderConnection = nil
     self.ObjectRadarConnection = nil
-    self.LightingStudioBackup = nil
+    self.RealisticLightingBackup = nil
+    self.RealisticAtmosphere = nil
+    self.RealisticBloom = nil
+    self.RealisticColor = nil
+    self.RealisticSunRays = nil
     self.FreeCamRotating = false
 
     pcall(function()
@@ -2495,7 +2392,7 @@ function Visuals:Cleanup()
         self.Shared.SetZoomUnlock = nil
         self.Shared.SetObjectRadar = nil
         self.Shared.RefreshObjectRadar = nil
-        self.Shared.SetLightingStudio = nil
+        self.Shared.SetRealisticLighting = nil
     end
 end
 
